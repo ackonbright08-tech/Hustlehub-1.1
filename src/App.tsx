@@ -25,7 +25,8 @@ import {
   Filter,
   DollarSign,
   Users,
-  Sliders
+  Sliders,
+  RefreshCw
 } from "lucide-react";
 
 import { Gig, ApplicationFormData, Category } from "./types";
@@ -112,7 +113,8 @@ export default function App() {
     customLocation: "",
     posterName: "",
     duration: "One-time",
-    requirements: ""
+    requirements: "",
+    expiresIn: "never"
   });
 
   const [applyForm, setApplyForm] = useState<ApplicationFormData>({
@@ -126,24 +128,139 @@ export default function App() {
   // Hustle tip index cycler
   const [tipIndex, setTipIndex] = useState(0);
 
+  // Pull to refresh states
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [startY, setStartY] = useState(0);
+  const [isPulling, setIsPulling] = useState(false);
+
+  // Clean expired gigs helper
+  const filterAndCleanExpiredGigs = (gigsList: Gig[]): Gig[] => {
+    const now = Date.now();
+    return gigsList.filter(gig => {
+      if (!gig.expiresAt) return true;
+      const expiryTime = new Date(gig.expiresAt).getTime();
+      return expiryTime > now;
+    });
+  };
+
+  // Helper to determine remaining duration
+  const getRemainingTime = (isoString?: string) => {
+    if (!isoString) return null;
+    const diff = new Date(isoString).getTime() - Date.now();
+    if (diff <= 0) return "Expired";
+    const mins = Math.floor(diff / 60000);
+    const hrs = Math.floor(mins / 60);
+    const days = Math.floor(hrs / 24);
+
+    if (days > 0) return `${days}d left`;
+    if (hrs > 0) return `${hrs}h left`;
+    return `${mins}m left`;
+  };
+
+  // Refresh feed trigger
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    setTimeout(() => {
+      const saved = localStorage.getItem("hustlehub_gigs");
+      let currentList = INITIAL_GIGS;
+      if (saved) {
+        try {
+          currentList = JSON.parse(saved);
+        } catch (e) {}
+      }
+      const activeGigs = filterAndCleanExpiredGigs(currentList);
+      setGigs(activeGigs);
+      localStorage.setItem("hustlehub_gigs", JSON.stringify(activeGigs));
+
+      // Filter bookmarks too
+      const savedFavorites = localStorage.getItem("hustlehub_saved");
+      if (savedFavorites) {
+        try {
+          const parsed = JSON.parse(savedFavorites) as string[];
+          const activeIds = new Set(activeGigs.map(g => g.id));
+          const filteredFavs = parsed.filter(id => activeIds.has(id));
+          setSavedGigIds(filteredFavs);
+          localStorage.setItem("hustlehub_saved", JSON.stringify(filteredFavs));
+        } catch (e) {}
+      }
+
+      setTipIndex(Math.floor(Math.random() * HUSTLE_TIPS.length));
+      setIsRefreshing(false);
+      setPullDistance(0);
+      triggerToast("🔄 Feed refreshed & expired hustles cleaned up!");
+    }, 1000);
+  };
+
+  // Touch handlers for Pull down to Refresh
+  useEffect(() => {
+    const handleTouchStart = (e: TouchEvent) => {
+      if (window.scrollY === 0) {
+        setStartY(e.touches[0].clientY);
+        setIsPulling(true);
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isPulling) return;
+      const currentY = e.touches[0].clientY;
+      const diff = currentY - startY;
+
+      if (diff > 0) {
+        const distance = Math.min(diff * 0.4, 90);
+        setPullDistance(distance);
+        if (e.cancelable) {
+          e.preventDefault();
+        }
+      } else {
+        setPullDistance(0);
+      }
+    };
+
+    const handleTouchEnd = () => {
+      if (!isPulling) return;
+      setIsPulling(false);
+      if (pullDistance >= 60 && !isRefreshing) {
+        handleRefresh();
+      } else {
+        setPullDistance(0);
+      }
+    };
+
+    window.addEventListener("touchstart", handleTouchStart, { passive: false });
+    window.addEventListener("touchmove", handleTouchMove, { passive: false });
+    window.addEventListener("touchend", handleTouchEnd);
+
+    return () => {
+      window.removeEventListener("touchstart", handleTouchStart);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, [startY, isPulling, pullDistance, isRefreshing]);
+
   // Initialize and load gigs
   useEffect(() => {
     const saved = localStorage.getItem("hustlehub_gigs");
+    let initialList = INITIAL_GIGS;
     if (saved) {
       try {
-        setGigs(JSON.parse(saved));
+        initialList = JSON.parse(saved);
       } catch (e) {
-        setGigs(INITIAL_GIGS);
+        initialList = INITIAL_GIGS;
       }
-    } else {
-      setGigs(INITIAL_GIGS);
-      localStorage.setItem("hustlehub_gigs", JSON.stringify(INITIAL_GIGS));
     }
+    const activeGigs = filterAndCleanExpiredGigs(initialList);
+    setGigs(activeGigs);
+    localStorage.setItem("hustlehub_gigs", JSON.stringify(activeGigs));
 
     const savedFavorites = localStorage.getItem("hustlehub_saved");
     if (savedFavorites) {
       try {
-        setSavedGigIds(JSON.parse(savedFavorites));
+        const parsed = JSON.parse(savedFavorites) as string[];
+        const activeIds = new Set(activeGigs.map(g => g.id));
+        const filteredFavs = parsed.filter(id => activeIds.has(id));
+        setSavedGigIds(filteredFavs);
+        localStorage.setItem("hustlehub_saved", JSON.stringify(filteredFavs));
       } catch (e) {}
     }
   }, []);
@@ -213,6 +330,23 @@ export default function App() {
       ? newGig.requirements.split(",").map(r => r.trim()).filter(r => r !== "")
       : [];
 
+    let expiresAt: string | undefined = undefined;
+    if (newGig.expiresIn && newGig.expiresIn !== "never") {
+      const now = Date.now();
+      let durationMs = 0;
+      switch (newGig.expiresIn) {
+        case "1h": durationMs = 1 * 60 * 60 * 1000; break;
+        case "6h": durationMs = 6 * 60 * 60 * 1000; break;
+        case "12h": durationMs = 12 * 60 * 60 * 1000; break;
+        case "24h": durationMs = 24 * 60 * 60 * 1000; break;
+        case "3d": durationMs = 3 * 24 * 60 * 60 * 1000; break;
+        case "7d": durationMs = 7 * 24 * 60 * 60 * 1000; break;
+      }
+      if (durationMs > 0) {
+        expiresAt = new Date(now + durationMs).toISOString();
+      }
+    }
+
     const newlyCreated: Gig = {
       id: "gig-" + Date.now(),
       title: newGig.title,
@@ -225,7 +359,8 @@ export default function App() {
       createdAt: new Date().toISOString(),
       posterName: newGig.posterName,
       duration: newGig.duration || "One-time",
-      requirements: reqArray
+      requirements: reqArray,
+      expiresAt
     };
 
     const updatedGigs = [newlyCreated, ...gigs];
@@ -243,7 +378,8 @@ export default function App() {
       customLocation: "",
       posterName: "",
       duration: "One-time",
-      requirements: ""
+      requirements: "",
+      expiresIn: "never"
     });
 
     setIsPostModalOpen(false);
@@ -368,6 +504,28 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Pull to Refresh Visual Indicator */}
+      {(pullDistance > 0 || isRefreshing) && (
+        <div 
+          className="fixed left-0 right-0 z-50 flex justify-center pointer-events-none transition-all duration-75"
+          style={{ 
+            top: `${75 + (isRefreshing ? 15 : pullDistance * 0.5)}px`,
+            opacity: isRefreshing ? 1 : Math.min(pullDistance / 50, 1)
+          }}
+        >
+          <div className="bg-dark-surface border border-teal-800/80 px-4 py-2 rounded-full shadow-2xl flex items-center space-x-2.5 text-white">
+            <RefreshCw 
+              className={`text-accent-teal ${isRefreshing ? "animate-spin" : ""}`} 
+              size={14} 
+              style={{ transform: isRefreshing ? undefined : `rotate(${pullDistance * 4}deg)` }}
+            />
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-teal-100">
+              {isRefreshing ? "Refreshing..." : pullDistance >= 60 ? "Release to Refresh" : "Pull to Refresh"}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Top Professional Header Navigation */}
       <header className="sticky top-0 z-40 bg-dark-surface text-white shadow-xl border-b border-teal-900/70 backdrop-blur-md">
@@ -501,9 +659,20 @@ export default function App() {
                 Sheets Sync
               </button>
             </div>
-            <span className="text-xs text-teal-200/40 font-semibold font-mono hidden md:inline">
-              Locally stored in Ghana
-            </span>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className="px-3 py-1.5 bg-dark-bg hover:bg-teal-950 text-teal-300 hover:text-white border border-teal-900/60 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50"
+                title="Refresh feed and auto-clean expired hustles"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin text-accent-teal" : ""}`} />
+                <span className="hidden sm:inline">Refresh Feed</span>
+              </button>
+              <span className="text-xs text-teal-200/40 font-semibold font-mono hidden md:inline">
+                Locally stored in Ghana
+              </span>
+            </div>
           </div>
 
           {/* Quick Filters - Search, Location */}
@@ -734,6 +903,13 @@ export default function App() {
                             {gig.duration && (
                               <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-dark-bg text-teal-300 border border-teal-900/40">
                                 {gig.duration}
+                              </span>
+                            )}
+                            {/* Expiry Badge */}
+                            {gig.expiresAt && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-rose-950/40 text-rose-300 border border-rose-900/40 flex items-center space-x-1 font-mono">
+                                <span>⏳</span>
+                                <span>{getRemainingTime(gig.expiresAt)}</span>
                               </span>
                             )}
                           </div>
@@ -1117,6 +1293,29 @@ export default function App() {
                   />
                   <span className="text-[9px] text-teal-300/40 block mt-1.5">
                     Separate each specific requirement with a comma (,).
+                  </span>
+                </div>
+
+                {/* Expiry / Lifespan Option */}
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-teal-200/60 tracking-wider block mb-1.5">
+                    Hustle Expiry Time <span className="text-accent-teal">(Auto-clean on Refresh)</span>
+                  </label>
+                  <select
+                    value={newGig.expiresIn}
+                    onChange={(e) => setNewGig({ ...newGig, expiresIn: e.target.value })}
+                    className="w-full bg-dark-bg border border-teal-900 focus:border-accent-teal rounded-xl px-3 py-2.5 text-xs focus:outline-none transition-all text-teal-100 font-bold cursor-pointer"
+                  >
+                    <option value="never" className="bg-dark-surface text-white">Never Expire / Always Available</option>
+                    <option value="1h" className="bg-dark-surface text-white">1 Hour</option>
+                    <option value="6h" className="bg-dark-surface text-white">6 Hours</option>
+                    <option value="12h" className="bg-dark-surface text-white">12 Hours</option>
+                    <option value="24h" className="bg-dark-surface text-white">24 Hours (1 Day)</option>
+                    <option value="3d" className="bg-dark-surface text-white">3 Days</option>
+                    <option value="7d" className="bg-dark-surface text-white">7 Days (1 Week)</option>
+                  </select>
+                  <span className="text-[9px] text-teal-300/40 block mt-1.5">
+                    Select how long this gig remains active. After expiry, it will automatically vanish upon page refresh!
                   </span>
                 </div>
 

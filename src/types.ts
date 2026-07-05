@@ -11,6 +11,7 @@ export interface Gig {
   duration?: string;
   requirements?: string[];
   customCategory?: string;
+  expiresAt?: string; // ISO string indicating expiration time
 }
 
 export interface ApplicationFormData {
