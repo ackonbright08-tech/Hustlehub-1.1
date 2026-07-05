@@ -343,6 +343,89 @@ export default function App() {
     message: ""
   });
 
+  // AI Autofill states
+  const [isAiParsing, setIsAiParsing] = useState(false);
+  const [rawAiText, setRawAiText] = useState("");
+  const [showSmartPaste, setShowSmartPaste] = useState(false);
+
+  const handleAiAutofill = async () => {
+    if (!rawAiText.trim()) {
+      triggerToast("⚠️ Please type or paste some text first.");
+      return;
+    }
+
+    setIsAiParsing(true);
+    try {
+      const response = await fetch("/api/parse-gig", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ rawText: rawAiText }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to parse gig description");
+      }
+
+      const parsed = await response.json();
+
+      // Mapping categories safely
+      let mappedCategory = "other";
+      if (parsed.category === "Tech & Social Media") mappedCategory = "tech";
+      else if (parsed.category === "Delivery & Transit") mappedCategory = "delivery";
+      else if (parsed.category === "Handwork & Repair" || parsed.category === "Handywork & Repair") mappedCategory = "handywork";
+      else if (parsed.category === "Fashion & Hair") mappedCategory = "fashion";
+      else if (parsed.category === "Teaching & Writing") mappedCategory = "tutoring";
+      else if (parsed.category === "Agric & Business" || parsed.category === "Agric & Garden") mappedCategory = "agriculture";
+
+      // Payout cleaning (e.g. GH₵150 -> 150)
+      let cleanedBudget = "";
+      if (parsed.payout && parsed.payout !== "Negotiable") {
+        const match = parsed.payout.match(/\d+/);
+        if (match) {
+          cleanedBudget = match[0];
+        }
+      }
+
+      // Location cleaning
+      let mappedLocation = "East Legon, Accra";
+      let mappedCustomLocation = "";
+
+      const lowerParsedLoc = (parsed.location || "").toLowerCase();
+      const matchedLoc = LOCATIONS.find(loc => 
+        loc.name.toLowerCase().includes(lowerParsedLoc) || 
+        lowerParsedLoc.includes(loc.name.toLowerCase())
+      );
+
+      if (matchedLoc && matchedLoc.id !== "other") {
+        mappedLocation = matchedLoc.name;
+      } else {
+        mappedLocation = "Other / Custom";
+        mappedCustomLocation = parsed.location;
+      }
+
+      setNewGig(prev => ({
+        ...prev,
+        title: parsed.title || prev.title,
+        category: mappedCategory,
+        budget: cleanedBudget,
+        location: mappedLocation,
+        customLocation: mappedCustomLocation,
+        description: parsed.description || prev.description
+      }));
+
+      triggerToast("✨ Form successfully auto-filled by HustleHub AI!");
+      setShowSmartPaste(false);
+    } catch (err: any) {
+      console.error(err);
+      triggerToast(`❌ AI Parsing error: ${err.message || "Please try again."}`);
+    } finally {
+      setIsAiParsing(false);
+    }
+  };
+
   // Success Notification / Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   
@@ -1419,6 +1502,65 @@ export default function App() {
 
               {/* Form Scroll Container */}
               <form onSubmit={handlePostSubmit} className="p-5 space-y-4 overflow-y-auto flex-1">
+                {/* AI SMART PASTE CONTAINER */}
+                <div className="bg-gradient-to-r from-teal-950/40 via-dark-surface to-teal-900/40 border border-teal-800/40 p-4 rounded-2xl space-y-3 shadow-md">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-sm">✨</span>
+                      <h4 className="text-xs font-black text-white">AI Quick-Post / Smart Paste</h4>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowSmartPaste(!showSmartPaste)}
+                      className="text-[10px] font-extrabold text-accent-teal hover:text-teal-400 bg-teal-950/80 border border-teal-800/40 px-2.5 py-1 rounded-lg cursor-pointer transition-all active:scale-95"
+                    >
+                      {showSmartPaste ? "Hide" : "Show AI Tool"}
+                    </button>
+                  </div>
+                  
+                  <AnimatePresence>
+                    {showSmartPaste && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="space-y-2.5 overflow-hidden"
+                      >
+                        <p className="text-[10px] text-teal-300 font-medium leading-relaxed">
+                          💡 Type or paste a description of what you need (e.g. <em>"Need a delivery rider to send yams from Madina to East Legon, paying GH₵150. Urgent!"</em>) and let HustleHub's AI engine automatically fill out the form fields below!
+                        </p>
+                        <textarea
+                          rows={3}
+                          placeholder="Paste or write your raw, messy details here..."
+                          value={rawAiText}
+                          onChange={(e) => setRawAiText(e.target.value)}
+                          className="w-full bg-dark-bg border border-teal-900 focus:border-accent-teal rounded-xl px-3 py-2 text-xs focus:outline-none transition-all text-white placeholder-teal-800 font-medium"
+                        />
+                        <button
+                          type="button"
+                          disabled={isAiParsing}
+                          onClick={handleAiAutofill}
+                          className="w-full bg-accent-teal hover:bg-teal-600 disabled:bg-teal-950 disabled:text-teal-700 disabled:border-teal-900/40 border border-teal-800/20 text-white py-2 rounded-xl text-xs font-black transition-all shadow-md active:scale-95 cursor-pointer flex items-center justify-center space-x-1.5"
+                        >
+                          {isAiParsing ? (
+                            <>
+                              <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                              </svg>
+                              <span>Processing with Gemini AI...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>✨ Auto-Fill Form fields</span>
+                            </>
+                          )}
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
                 {/* Poster Name */}
                 <div>
                   <label className="text-[10px] font-bold uppercase text-teal-200/60 tracking-wider block mb-1.5">
