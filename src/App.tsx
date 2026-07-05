@@ -26,12 +26,14 @@ import {
   DollarSign,
   Users,
   Sliders,
-  RefreshCw
+  RefreshCw,
+  User
 } from "lucide-react";
 
-import { Gig, ApplicationFormData, Category } from "./types";
+import { Gig, ApplicationFormData, Category, UserProfile } from "./types";
 import { CATEGORIES, LOCATIONS, INITIAL_GIGS } from "./data";
 import GoogleSheetsSync from "./components/GoogleSheetsSync";
+import ProfileDrawer from "./components/ProfileDrawer";
 
 // Helper to convert categories to Lucide Icons
 const getCategoryIcon = (iconName: string, size = 18) => {
@@ -88,6 +90,58 @@ export default function App() {
     }
   };
   
+  // Local profile states
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isProfileDrawerOpen, setIsProfileDrawerOpen] = useState(false);
+
+  const handleSaveProfile = (updated: UserProfile) => {
+    setProfile(updated);
+    localStorage.setItem("hustlehub_profile", JSON.stringify(updated));
+    triggerToast("👤 Profile saved successfully! Form pre-fills are active.");
+  };
+
+  const handleClearProfile = () => {
+    setProfile(null);
+    localStorage.removeItem("hustlehub_profile");
+    triggerToast("🗑️ Profile cleared successfully.");
+  };
+
+  const openPostModal = () => {
+    if (profile) {
+      const locExists = LOCATIONS.some(loc => loc.name === profile.location);
+      setNewGig({
+        title: "",
+        category: "tech",
+        customCategory: "",
+        description: "",
+        budget: "",
+        whatsapp: profile.phone || "",
+        location: locExists ? profile.location : "Other / Custom",
+        customLocation: locExists ? "" : profile.location,
+        posterName: profile.name || "",
+        duration: "One-time",
+        requirements: "",
+        expiresIn: "never"
+      });
+    } else {
+      setNewGig({
+        title: "",
+        category: "tech",
+        customCategory: "",
+        description: "",
+        budget: "",
+        whatsapp: "",
+        location: "East Legon, Accra",
+        customLocation: "",
+        posterName: "",
+        duration: "One-time",
+        requirements: "",
+        expiresIn: "never"
+      });
+    }
+    setIsPostModalOpen(true);
+  };
+
   // Filtering & Search state
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -263,6 +317,13 @@ export default function App() {
         localStorage.setItem("hustlehub_saved", JSON.stringify(filteredFavs));
       } catch (e) {}
     }
+
+    const savedProfile = localStorage.getItem("hustlehub_profile");
+    if (savedProfile) {
+      try {
+        setProfile(JSON.parse(savedProfile));
+      } catch (e) {}
+    }
   }, []);
 
   // Save gigs to local storage on changes
@@ -366,21 +427,39 @@ export default function App() {
     const updatedGigs = [newlyCreated, ...gigs];
     saveGigs(updatedGigs);
 
-    // Reset Form
-    setNewGig({
-      title: "",
-      category: "tech",
-      customCategory: "",
-      description: "",
-      budget: "",
-      whatsapp: "",
-      location: "East Legon, Accra",
-      customLocation: "",
-      posterName: "",
-      duration: "One-time",
-      requirements: "",
-      expiresIn: "never"
-    });
+    // Reset Form with profile pre-fill if present
+    if (profile) {
+      const locExists = LOCATIONS.some(loc => loc.name === profile.location);
+      setNewGig({
+        title: "",
+        category: "tech",
+        customCategory: "",
+        description: "",
+        budget: "",
+        whatsapp: profile.phone || "",
+        location: locExists ? profile.location : "Other / Custom",
+        customLocation: locExists ? "" : profile.location,
+        posterName: profile.name || "",
+        duration: "One-time",
+        requirements: "",
+        expiresIn: "never"
+      });
+    } else {
+      setNewGig({
+        title: "",
+        category: "tech",
+        customCategory: "",
+        description: "",
+        budget: "",
+        whatsapp: "",
+        location: "East Legon, Accra",
+        customLocation: "",
+        posterName: "",
+        duration: "One-time",
+        requirements: "",
+        expiresIn: "never"
+      });
+    }
 
     setIsPostModalOpen(false);
     triggerToast("🎉 Your Hustle has been posted successfully! It is now live.");
@@ -389,7 +468,10 @@ export default function App() {
   // Initiate Application Modal
   const openApplyModal = (gig: Gig) => {
     setSelectedGigToApply(gig);
-    setApplyForm({ name: "", message: `Hi ${gig.posterName}, I'm interested in your Hustle: "${gig.title}". I am ready to get to work!` });
+    setApplyForm({ 
+      name: profile?.name || "", 
+      message: `Hi ${gig.posterName}, I'm interested in your Hustle: "${gig.title}". I am ready to get to work!` 
+    });
     setIsApplyModalOpen(true);
   };
 
@@ -548,11 +630,20 @@ export default function App() {
 
           <div className="flex items-center space-x-2">
             <button 
-              onClick={() => setIsPostModalOpen(true)}
+              onClick={() => setIsProfileDrawerOpen(true)}
+              className="bg-dark-bg hover:bg-teal-950 border border-teal-900/60 text-teal-300 hover:text-white px-3.5 py-2 rounded-xl text-xs md:text-sm font-bold flex items-center space-x-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
+              title="Set up your profile for auto-fills"
+            >
+              <User size={15} />
+              <span className="hidden sm:inline">{profile ? "My Profile" : "Set Profile"}</span>
+            </button>
+            <button 
+              onClick={openPostModal}
               className="bg-accent-teal hover:bg-teal-600 text-white px-4 py-2 rounded-xl text-xs md:text-sm font-bold flex items-center space-x-1.5 transition-all shadow-lg active:scale-95 cursor-pointer"
             >
               <Plus size={16} strokeWidth={2.5} />
-              <span>Post a Hustle</span>
+              <span className="hidden sm:inline">Post a Hustle</span>
+              <span className="sm:hidden">Post</span>
             </button>
           </div>
         </div>
@@ -1057,7 +1148,7 @@ export default function App() {
       {/* MOBILE-FIRST FLOATING BUTTON */}
       <div className="fixed bottom-4 right-4 z-30 md:hidden">
         <button
-          onClick={() => setIsPostModalOpen(true)}
+          onClick={openPostModal}
           className="bg-ghana-gold text-dark-bg p-4 rounded-full shadow-2xl flex items-center justify-center font-bold active:scale-90 transition-all cursor-pointer pulse-glow animate-pulse"
           style={{ boxShadow: "0 10px 25px -5px rgba(0, 137, 123, 0.4)" }}
         >
@@ -1458,6 +1549,15 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+
+      <ProfileDrawer
+        isOpen={isProfileDrawerOpen}
+        onClose={() => setIsProfileDrawerOpen(false)}
+        onSave={handleSaveProfile}
+        onClear={handleClearProfile}
+        currentProfile={profile}
+        triggerToast={triggerToast}
+      />
 
     </div>
   );

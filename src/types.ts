@@ -32,3 +32,11 @@ export interface LocationOption {
   name: string;
   region: string;
 }
+
+export interface UserProfile {
+  name: string;
+  phone: string;
+  location: string;
+  customLocation?: string;
+}
+
