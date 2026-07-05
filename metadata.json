@@ -1,0 +1,6 @@
+{
+  "name": "HustleHub",
+  "description": "A mobile-first gig platform for the Ghanaian economy, connecting local talents with instant work via dynamic WhatsApp application links.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

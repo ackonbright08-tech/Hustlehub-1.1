@@ -1,0 +1,58 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-dark-bg: #002d26;       /* Deepest Dark Teal Background */
+  --color-dark-surface: #004d40;  /* Main Card/Bento Surface */
+  --color-dark-card: #003d33;     /* Secondary Cards/Interactive Panels */
+  --color-accent-teal: #00897b;   /* Vibrant Highlight Teal */
+  
+  --color-ghana-gold: #ffb300;    /* Warm Gold */
+  --color-teal-50: #e0f2f1;
+  --color-teal-100: #b2dfdb;
+  --color-teal-200: #80cbc4;
+  --color-teal-300: #4db6ac;
+  --color-teal-400: #26a69a;
+  
+  --font-sans: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+/* Custom scrollbars for a neat look */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #00897b;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #26a69a;
+}
+
+body {
+  background-color: var(--color-dark-bg);
+  color: #ffffff;
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
+}
+
+/* Bento card active effects */
+.bento-card {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(0.98); }
+}
+
+.pulse-glow {
+  animation: pulse-subtle 3s infinite ease-in-out;
+}
+
