@@ -27,7 +27,9 @@ import {
   Users,
   Sliders,
   RefreshCw,
-  User
+  User,
+  Sun,
+  Moon
 } from "lucide-react";
 
 import { Gig, ApplicationFormData, Category, UserProfile } from "./types";
@@ -93,6 +95,171 @@ export default function App() {
   // Local profile states
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isProfileDrawerOpen, setIsProfileDrawerOpen] = useState(false);
+
+  // App Theme & Background States
+  const [theme, setThemeState] = useState<'light' | 'dark'>(() => {
+    try {
+      const saved = localStorage.getItem("hustlehub_theme");
+      return (saved as 'light' | 'dark') || 'dark';
+    } catch (e) {
+      return 'dark';
+    }
+  });
+
+  const [bgType, setBgType] = useState<string>(() => {
+    try {
+      return localStorage.getItem("hustlehub_bg_type") || "none";
+    } catch (e) {
+      return "none";
+    }
+  });
+
+  const [customBgUrl, setCustomBgUrl] = useState<string>(() => {
+    try {
+      return localStorage.getItem("hustlehub_bg_custom_url") || "";
+    } catch (e) {
+      return "";
+    }
+  });
+
+  // Apply root theme class dynamically
+  const setTheme = (t: 'light' | 'dark') => {
+    setThemeState(t);
+    try {
+      localStorage.setItem("hustlehub_theme", t);
+    } catch (e) {}
+    const root = document.documentElement;
+    if (t === 'light') {
+      root.classList.add('light');
+    } else {
+      root.classList.remove('light');
+    }
+  };
+
+  const handleSetBgType = (type: string) => {
+    setBgType(type);
+    try {
+      localStorage.setItem("hustlehub_bg_type", type);
+    } catch (e) {}
+  };
+
+  const handleSetCustomBgUrl = (url: string) => {
+    setCustomBgUrl(url);
+    try {
+      localStorage.setItem("hustlehub_bg_custom_url", url);
+    } catch (e) {}
+  };
+
+  const getBackgroundStyle = () => {
+    switch (bgType) {
+      case "sunset":
+        return {
+          background: theme === "light"
+            ? "linear-gradient(135deg, #fef08a 0%, #f97316 50%, #ccfbf1 100%)"
+            : "linear-gradient(135deg, #022c22 0%, #115e59 40%, #7c2d12 100%)",
+          backgroundAttachment: "fixed"
+        } as React.CSSProperties;
+      case "cyber":
+        return {
+          background: theme === "light"
+            ? "radial-gradient(at 0% 0%, #ccfbf1 0px, transparent 50%), radial-gradient(at 100% 100%, #fef08a 0px, transparent 50%)"
+            : "radial-gradient(at 0% 0%, #004d40 0px, transparent 50%), radial-gradient(at 50% 0%, #001e18 0px, transparent 70%), radial-gradient(at 100% 0%, #78350f 0px, transparent 50%)",
+          backgroundAttachment: "fixed"
+        } as React.CSSProperties;
+      case "ocean":
+        return {
+          background: theme === "light"
+            ? "linear-gradient(135deg, #e0f2f1 0%, #cbd5e1 50%, #bae6fd 100%)"
+            : "linear-gradient(135deg, #011612 0%, #004d40 60%, #0c4a6e 100%)",
+          backgroundAttachment: "fixed"
+        } as React.CSSProperties;
+      case "abstract":
+        return {
+          backgroundImage: "url('https://images.unsplash.com/photo-1579546929518-9e396f3cc809?q=80&w=1920&auto=format&fit=crop')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundAttachment: "fixed"
+        } as React.CSSProperties;
+      case "custom":
+        if (customBgUrl.trim()) {
+          return {
+            backgroundImage: `url('${customBgUrl}')`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundAttachment: "fixed"
+          } as React.CSSProperties;
+        }
+        return {} as React.CSSProperties;
+      default:
+        return {} as React.CSSProperties;
+    }
+  };
+
+  // PWA Install states
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(() => {
+    try {
+      return localStorage.getItem("hustlehub_install_dismissed") !== "true";
+    } catch (e) {
+      return true;
+    }
+  });
+  const [isInstalled, setIsInstalled] = useState(false);
+
+  useEffect(() => {
+    // Check matchMedia standalone
+    try {
+      if (window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone) {
+        setIsInstalled(true);
+      }
+    } catch (e) {}
+
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const triggerInstallFlow = async () => {
+    if (!deferredPrompt) {
+      alert("Browser installation prompt is not available yet. If you are on iOS/Safari, please tap the 'Share' icon and select 'Add to Home Screen'. If you are on Android/Chrome, select 'Install app' from the menu.");
+      return;
+    }
+    deferredPrompt.prompt();
+    try {
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setIsInstalled(true);
+        triggerToast("💚 Awesome! HustleHub installed successfully.");
+      }
+    } catch (err) {}
+    setDeferredPrompt(null);
+  };
+
+  const dismissInstallBanner = () => {
+    setShowInstallBanner(false);
+    try {
+      localStorage.setItem("hustlehub_install_dismissed", "true");
+    } catch (e) {}
+  };
+
+  // Sync theme to document element on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("hustlehub_theme") || 'dark';
+      const root = document.documentElement;
+      if (saved === 'light') {
+        root.classList.add('light');
+      } else {
+        root.classList.remove('light');
+      }
+    } catch (e) {}
+  }, []);
 
   const handleSaveProfile = (updated: UserProfile) => {
     setProfile(updated);
@@ -566,7 +733,10 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-dark-bg flex flex-col antialiased text-white selection:bg-accent-teal selection:text-white">
+    <div 
+      className="min-h-screen bg-dark-bg flex flex-col antialiased text-white selection:bg-accent-teal selection:text-white transition-all duration-300"
+      style={getBackgroundStyle()}
+    >
       {/* Dynamic Toast System */}
       <AnimatePresence>
         {toastMessage && (
@@ -629,6 +799,13 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+              className="bg-dark-bg hover:bg-teal-950 border border-teal-900/60 text-teal-300 hover:text-white p-2 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer flex items-center justify-center"
+              title={`Switch to ${theme === 'light' ? 'Dark' : 'Light'} Mode`}
+            >
+              {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
+            </button>
             <button 
               onClick={() => setIsProfileDrawerOpen(true)}
               className="bg-dark-bg hover:bg-teal-950 border border-teal-900/60 text-teal-300 hover:text-white px-3.5 py-2 rounded-xl text-xs md:text-sm font-bold flex items-center space-x-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
@@ -651,6 +828,56 @@ export default function App() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 space-y-4">
+
+        {/* PWA INSTALL BANNER */}
+        {showInstallBanner && !isInstalled && (
+          <div className="bg-gradient-to-r from-teal-950 via-dark-surface to-teal-900 border border-teal-800/60 p-5 rounded-3xl shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative overflow-hidden bento-card">
+            <div className="absolute top-0 right-0 w-32 h-32 rounded-full bg-ghana-gold/5 blur-2xl animate-pulse" />
+            <div className="flex items-start space-x-3.5 z-10">
+              <div className="p-3 bg-ghana-gold/15 border border-ghana-gold/30 rounded-2xl text-ghana-gold text-2xl flex-shrink-0">
+                🇬🇭
+              </div>
+              <div>
+                <h3 className="text-sm font-extrabold text-white flex items-center gap-1.5 flex-wrap">
+                  Install HustleHub Ghana
+                  <span className="text-[9px] bg-ghana-gold/20 text-ghana-gold px-2 py-0.5 rounded-full border border-ghana-gold/40 uppercase font-mono font-bold tracking-wide">
+                    Fast Clean App
+                  </span>
+                </h3>
+                <p className="text-xs text-teal-200 opacity-80 mt-1 leading-relaxed max-w-xl">
+                  Add HustleHub to your Home Screen for a clean, full-screen native experience. Zero loading delay, fast offline access, and no address bar clutter!
+                </p>
+                
+                {/* How-To Install expandable Details */}
+                <details className="mt-2 text-[10px] text-teal-300 hover:text-white cursor-pointer focus:outline-none transition-colors">
+                  <summary className="font-bold">
+                    💡 Click here to view install instructions for your device
+                  </summary>
+                  <div className="mt-1.5 p-3 bg-dark-bg/60 rounded-xl border border-teal-900/40 space-y-2 text-teal-100 font-medium leading-relaxed">
+                    <p>📱 <strong>Android / Chrome:</strong> Tap the browser menu (three dots in top right) and select <span className="text-ghana-gold font-bold">"Install App"</span> or <span className="text-ghana-gold font-bold">"Add to Home screen"</span>.</p>
+                    <p>🍏 <strong>iOS / Safari (iPhone):</strong> Tap the <span className="text-ghana-gold font-bold">Share button</span> (square with arrow up), scroll down and tap <span className="text-ghana-gold font-bold">"Add to Home Screen"</span>.</p>
+                    <p>💻 <strong>Desktop (Chrome/Edge):</strong> Click the tiny <span className="text-ghana-gold font-bold">monitor/install icon</span> in your browser's address bar.</p>
+                  </div>
+                </details>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2 w-full md:w-auto z-10">
+              <button
+                onClick={triggerInstallFlow}
+                className="flex-1 md:flex-initial bg-ghana-gold hover:bg-yellow-500 text-dark-bg px-4.5 py-2.5 rounded-xl text-xs font-black transition-all shadow-md active:scale-95 cursor-pointer flex items-center justify-center space-x-1"
+              >
+                <span>Install Now</span>
+              </button>
+              <button
+                onClick={dismissInstallBanner}
+                className="p-2.5 rounded-xl text-teal-300 hover:text-white hover:bg-teal-900/40 border border-teal-900/40 transition-all cursor-pointer flex items-center justify-center"
+                title="Dismiss and hide this banner"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        )}
         
         {/* BENTO GRID STATS BLOCK */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1557,6 +1784,12 @@ export default function App() {
         onClear={handleClearProfile}
         currentProfile={profile}
         triggerToast={triggerToast}
+        theme={theme}
+        setTheme={setTheme}
+        bgType={bgType}
+        setBgType={handleSetBgType}
+        customBgUrl={customBgUrl}
+        setCustomBgUrl={handleSetCustomBgUrl}
       />
 
     </div>

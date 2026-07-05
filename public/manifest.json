@@ -1,0 +1,21 @@
+{
+  "short_name": "HustleHub",
+  "name": "HustleHub Ghana",
+  "icons": [
+    {
+      "src": "https://images.unsplash.com/photo-1543269865-cbf427effbad?w=192&h=192&fit=crop",
+      "type": "image/jpeg",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://images.unsplash.com/photo-1543269865-cbf427effbad?w=512&h=512&fit=crop",
+      "type": "image/jpeg",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#002d26",
+  "theme_color": "#00897b",
+  "display": "standalone",
+  "orientation": "portrait"
+}

@@ -1,17 +1,39 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
+:root {
+  --bg-color: #002d26;
+  --surface-color: #004d40;
+  --card-color: #003d33;
+  --accent-teal: #00897b;
+  --text-color: #ffffff;
+  --text-teal-100: #b2dfdb;
+  --text-teal-200: #80cbc4;
+  --text-teal-300: #4db6ac;
+}
+
+html.light {
+  --bg-color: #f1f5f9;       /* Light neutral slate bg */
+  --surface-color: #ffffff;  /* Pure white cards */
+  --card-color: #f8fafc;     /* Off-white secondary panels */
+  --accent-teal: #0f766e;    /* Rich, high-contrast professional teal */
+  --text-color: #0f172a;     /* Deep slate text */
+  --text-teal-100: #334155;  /* Slate text */
+  --text-teal-200: #475569;  /* Slate text */
+  --text-teal-300: #64748b;  /* Slate-muted text */
+}
+
 @theme {
-  --color-dark-bg: #002d26;       /* Deepest Dark Teal Background */
-  --color-dark-surface: #004d40;  /* Main Card/Bento Surface */
-  --color-dark-card: #003d33;     /* Secondary Cards/Interactive Panels */
-  --color-accent-teal: #00897b;   /* Vibrant Highlight Teal */
+  --color-dark-bg: var(--bg-color);       /* Deepest Dark Teal Background */
+  --color-dark-surface: var(--surface-color);  /* Main Card/Bento Surface */
+  --color-dark-card: var(--card-color);     /* Secondary Cards/Interactive Panels */
+  --color-accent-teal: var(--accent-teal);   /* Vibrant Highlight Teal */
   
   --color-ghana-gold: #ffb300;    /* Warm Gold */
   --color-teal-50: #e0f2f1;
-  --color-teal-100: #b2dfdb;
-  --color-teal-200: #80cbc4;
-  --color-teal-300: #4db6ac;
+  --color-teal-100: var(--text-teal-100);
+  --color-teal-200: var(--text-teal-200);
+  --color-teal-300: var(--text-teal-300);
   --color-teal-400: #26a69a;
   
   --font-sans: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, sans-serif;
@@ -36,10 +58,74 @@
 
 body {
   background-color: var(--color-dark-bg);
-  color: #ffffff;
+  color: var(--text-color);
   font-family: var(--font-sans);
   -webkit-tap-highlight-color: transparent;
   overflow-x: hidden;
+}
+
+/* Light mode support */
+html.light body {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+/* Correct card and bento box text colors in Light Mode */
+html.light .bg-dark-surface,
+html.light .bg-dark-card,
+html.light .bg-dark-bg {
+  color: #1e293b !important;
+}
+
+html.light .bg-dark-surface .text-white,
+html.light .bg-dark-card .text-white,
+html.light .bg-dark-bg .text-white,
+html.light p.text-teal-50,
+html.light p.text-teal-100,
+html.light span.text-teal-100,
+html.light div.text-teal-100 {
+  color: #0f172a !important;
+}
+
+html.light .text-white {
+  color: #1e293b;
+}
+
+/* Keep white text for buttons or explicit active elements */
+html.light button.bg-accent-teal *,
+html.light button.bg-accent-teal,
+html.light .bg-accent-teal .text-white,
+html.light .bg-accent-teal p,
+html.light .bg-accent-teal span,
+html.light .bg-accent-teal *,
+html.light .bg-teal-600 *,
+html.light .bg-teal-700 * {
+  color: #ffffff !important;
+}
+
+html.light .bg-ghana-gold .text-dark-bg,
+html.light .bg-ghana-gold * {
+  color: #0f172a !important;
+}
+
+html.light [class*="border-teal-"] {
+  border-color: rgba(13, 148, 136, 0.12) !important;
+}
+
+html.light [class*="bg-teal-950/"] {
+  background-color: rgba(13, 148, 136, 0.05) !important;
+  border-color: rgba(13, 148, 136, 0.15) !important;
+}
+
+html.light [class*="bg-dark-bg/"] {
+  background-color: rgba(226, 232, 240, 0.6) !important;
+}
+
+html.light [class*="hover:bg-teal-"] {
+  --tw-bg-opacity: 1;
+}
+html.light [class*="hover:bg-teal-950"]:hover {
+  background-color: #e2e8f0 !important;
 }
 
 /* Bento card active effects */

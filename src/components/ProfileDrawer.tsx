@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { User, X, Save, MapPin, Phone, Trash2, Check, Info } from 'lucide-react';
+import { User, X, Save, MapPin, Phone, Trash2, Check, Info, Sun, Moon, Palette, Image as ImageIcon } from 'lucide-react';
 import { UserProfile } from '../types';
 import { LOCATIONS } from '../data';
 
@@ -11,6 +11,12 @@ interface ProfileDrawerProps {
   onClear: () => void;
   currentProfile: UserProfile | null;
   triggerToast: (msg: string) => void;
+  theme: 'light' | 'dark';
+  setTheme: (theme: 'light' | 'dark') => void;
+  bgType: string;
+  setBgType: (bgType: string) => void;
+  customBgUrl: string;
+  setCustomBgUrl: (url: string) => void;
 }
 
 export default function ProfileDrawer({
@@ -19,7 +25,13 @@ export default function ProfileDrawer({
   onSave,
   onClear,
   currentProfile,
-  triggerToast
+  triggerToast,
+  theme,
+  setTheme,
+  bgType,
+  setBgType,
+  customBgUrl,
+  setCustomBgUrl
 }: ProfileDrawerProps) {
   const [profile, setProfile] = useState<UserProfile>({
     name: '',
@@ -185,6 +197,178 @@ export default function ProfileDrawer({
                   />
                 </div>
               )}
+
+              {/* Personalization divider */}
+              <div className="pt-4 border-t border-teal-900/30">
+                <h3 className="text-[11px] font-extrabold uppercase text-accent-teal tracking-wider mb-4 flex items-center space-x-1.5">
+                  <Palette size={13} />
+                  <span>App Personalization & Styling</span>
+                </h3>
+              </div>
+
+              {/* Theme Selector (Light vs Dark) */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase text-teal-200/60 tracking-wider block mb-1">
+                  App Palette Theme
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTheme('dark');
+                      triggerToast('🌙 Dark Mode activated!');
+                    }}
+                    className={`p-3 rounded-2xl border text-xs font-bold flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+                      theme === 'dark'
+                        ? 'bg-accent-teal/10 border-accent-teal text-white shadow-md'
+                        : 'bg-dark-bg/40 border-teal-900/50 text-teal-300 hover:text-white'
+                    }`}
+                  >
+                    <Moon size={14} />
+                    <span>Dark Mode</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTheme('light');
+                      triggerToast('☀️ Light Mode activated!');
+                    }}
+                    className={`p-3 rounded-2xl border text-xs font-bold flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+                      theme === 'light'
+                        ? 'bg-white border-accent-teal text-teal-950 shadow-md'
+                        : 'bg-dark-bg/40 border-teal-900/50 text-teal-300 hover:text-white'
+                    }`}
+                  >
+                    <Sun size={14} />
+                    <span>Light Mode</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Background Picker */}
+              <div className="space-y-3">
+                <label className="text-[10px] font-bold uppercase text-teal-200/60 tracking-wider block mb-1">
+                  Custom Workspace Background
+                </label>
+                
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  {/* Preset 1: None */}
+                  <button
+                    type="button"
+                    onClick={() => setBgType('none')}
+                    className={`p-2.5 rounded-xl border font-bold text-left flex items-center justify-between transition-all cursor-pointer ${
+                      bgType === 'none'
+                        ? 'border-accent-teal bg-accent-teal/10 text-white'
+                        : 'border-teal-900/40 bg-dark-bg/30 text-teal-200/70 hover:text-white'
+                    }`}
+                  >
+                    <span>Solid Default</span>
+                    {bgType === 'none' && <Check size={12} className="text-accent-teal" />}
+                  </button>
+
+                  {/* Preset 2: Ghana Sunset */}
+                  <button
+                    type="button"
+                    onClick={() => setBgType('sunset')}
+                    className={`p-2.5 rounded-xl border font-bold text-left flex items-center justify-between transition-all cursor-pointer ${
+                      bgType === 'sunset'
+                        ? 'border-accent-teal bg-accent-teal/10 text-white'
+                        : 'border-teal-900/40 bg-dark-bg/30 text-teal-200/70 hover:text-white'
+                    }`}
+                  >
+                    <span className="flex items-center space-x-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-tr from-teal-800 via-yellow-500 to-rose-600 inline-block" />
+                      <span>Ghana Sunset</span>
+                    </span>
+                    {bgType === 'sunset' && <Check size={12} className="text-accent-teal" />}
+                  </button>
+
+                  {/* Preset 3: Cyber Mesh */}
+                  <button
+                    type="button"
+                    onClick={() => setBgType('cyber')}
+                    className={`p-2.5 rounded-xl border font-bold text-left flex items-center justify-between transition-all cursor-pointer ${
+                      bgType === 'cyber'
+                        ? 'border-accent-teal bg-accent-teal/10 text-white'
+                        : 'border-teal-900/40 bg-dark-bg/30 text-teal-200/70 hover:text-white'
+                    }`}
+                  >
+                    <span className="flex items-center space-x-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-tr from-[#004d40] to-accent-teal inline-block" />
+                      <span>Cyber Mesh</span>
+                    </span>
+                    {bgType === 'cyber' && <Check size={12} className="text-accent-teal" />}
+                  </button>
+
+                  {/* Preset 4: Deep Ocean */}
+                  <button
+                    type="button"
+                    onClick={() => setBgType('ocean')}
+                    className={`p-2.5 rounded-xl border font-bold text-left flex items-center justify-between transition-all cursor-pointer ${
+                      bgType === 'ocean'
+                        ? 'border-accent-teal bg-accent-teal/10 text-white'
+                        : 'border-teal-900/40 bg-dark-bg/30 text-teal-200/70 hover:text-white'
+                    }`}
+                  >
+                    <span className="flex items-center space-x-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-tr from-slate-900 to-[#00897b] inline-block" />
+                      <span>Deep Ocean</span>
+                    </span>
+                    {bgType === 'ocean' && <Check size={12} className="text-accent-teal" />}
+                  </button>
+
+                  {/* Preset 5: Abstract Unsplash */}
+                  <button
+                    type="button"
+                    onClick={() => setBgType('abstract')}
+                    className={`p-2.5 rounded-xl border font-bold text-left flex items-center justify-between transition-all cursor-pointer ${
+                      bgType === 'abstract'
+                        ? 'border-accent-teal bg-accent-teal/10 text-white'
+                        : 'border-teal-900/40 bg-dark-bg/30 text-teal-200/70 hover:text-white'
+                    }`}
+                  >
+                    <span className="flex items-center space-x-1.5">
+                      <ImageIcon size={12} className="text-teal-400" />
+                      <span>Cosmic Wave</span>
+                    </span>
+                    {bgType === 'abstract' && <Check size={12} className="text-accent-teal" />}
+                  </button>
+
+                  {/* Preset 6: Custom URL */}
+                  <button
+                    type="button"
+                    onClick={() => setBgType('custom')}
+                    className={`p-2.5 rounded-xl border font-bold text-left flex items-center justify-between transition-all cursor-pointer ${
+                      bgType === 'custom'
+                        ? 'border-accent-teal bg-accent-teal/10 text-white'
+                        : 'border-teal-900/40 bg-dark-bg/30 text-teal-200/70 hover:text-white'
+                    }`}
+                  >
+                    <span className="flex items-center space-x-1.5">
+                      <Palette size={12} className="text-ghana-gold" />
+                      <span>Custom URL</span>
+                    </span>
+                    {bgType === 'custom' && <Check size={12} className="text-accent-teal" />}
+                  </button>
+                </div>
+
+                {/* Custom URL Input if "custom" is selected */}
+                {bgType === 'custom' && (
+                  <div className="space-y-1.5 mt-2 animate-fadeIn">
+                    <input
+                      type="url"
+                      placeholder="Paste image link e.g. https://domain.com/image.jpg"
+                      value={customBgUrl}
+                      onChange={(e) => setCustomBgUrl(e.target.value)}
+                      className="w-full bg-dark-bg border border-teal-900 focus:border-accent-teal rounded-xl py-2 px-3 text-xs text-white placeholder-teal-700 focus:outline-none transition-all font-bold"
+                    />
+                    <span className="text-[9px] text-teal-300/40 block">
+                      Provide a direct web link (HTTPS) to any image of your choice to style your dashboard.
+                    </span>
+                  </div>
+                )}
+              </div>
 
             </form>
 
