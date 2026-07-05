@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { User, X, Save, MapPin, Phone, Trash2, Check, Info, Sun, Moon, Palette, Image as ImageIcon } from 'lucide-react';
+import { User, X, Save, MapPin, Phone, Trash2, Check, Info, Sun, Moon, Palette, Image as ImageIcon, ShieldCheck, LogOut } from 'lucide-react';
 import { UserProfile } from '../types';
 import { LOCATIONS } from '../data';
 
@@ -17,6 +17,10 @@ interface ProfileDrawerProps {
   setBgType: (bgType: string) => void;
   customBgUrl: string;
   setCustomBgUrl: (url: string) => void;
+  isAuthenticated?: boolean;
+  userPhone?: string;
+  onLogout?: () => void;
+  onDeleteAccount?: () => void;
 }
 
 export default function ProfileDrawer({
@@ -31,7 +35,11 @@ export default function ProfileDrawer({
   bgType,
   setBgType,
   customBgUrl,
-  setCustomBgUrl
+  setCustomBgUrl,
+  isAuthenticated,
+  userPhone,
+  onLogout,
+  onDeleteAccount
 }: ProfileDrawerProps) {
   const [profile, setProfile] = useState<UserProfile>({
     name: '',
@@ -195,6 +203,45 @@ export default function ProfileDrawer({
                     onChange={(e) => setProfile({ ...profile, customLocation: e.target.value })}
                     className="w-full bg-dark-bg border border-teal-900 focus:border-accent-teal rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-teal-700 focus:outline-none transition-all font-bold"
                   />
+                </div>
+              )}
+
+              {/* Account Security & Privacy */}
+              {isAuthenticated && (
+                <div className="pt-4 border-t border-teal-900/30 space-y-3 animate-fadeIn">
+                  <h3 className="text-[11px] font-extrabold uppercase text-rose-500 tracking-wider flex items-center space-x-1.5">
+                    <ShieldCheck size={13} className="text-rose-500" />
+                    <span>Account Security & Privacy</span>
+                  </h3>
+                  <div className="p-4 bg-rose-950/10 rounded-2xl border border-rose-900/30 space-y-3">
+                    <div className="flex items-center justify-between text-xs text-teal-100">
+                      <span>Authenticated Phone:</span>
+                      <span className="font-extrabold text-white font-mono bg-dark-bg/60 px-2 py-1 rounded border border-teal-900/50">
+                        {userPhone}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-teal-300/70 leading-relaxed">
+                      Wiping your account permanently deletes your registered number and removes all your posted hustles from Google Sheets.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={onLogout}
+                        className="w-full bg-teal-950/80 hover:bg-teal-900 border border-teal-800/80 hover:border-teal-700 text-teal-100 px-3 py-2 rounded-xl text-[10.5px] font-black transition-all cursor-pointer flex items-center justify-center space-x-1 shadow-sm active:scale-95"
+                      >
+                        <LogOut size={12} />
+                        <span>Log Out</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={onDeleteAccount}
+                        className="w-full bg-rose-950/80 hover:bg-rose-900 border border-rose-900/50 hover:border-rose-800 text-rose-200 px-3 py-2 rounded-xl text-[10.5px] font-black transition-all cursor-pointer flex items-center justify-center space-x-1 shadow-sm active:scale-95"
+                      >
+                        <Trash2 size={12} />
+                        <span>Delete Account</span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 
