@@ -12,7 +12,6 @@ export interface Gig {
   requirements?: string[];
   customCategory?: string;
   expiresAt?: string; // ISO string indicating expiration time
-  userPhone?: string; // poster's authenticated phone number
 }
 
 export interface ApplicationFormData {

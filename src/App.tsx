@@ -29,10 +29,7 @@ import {
   RefreshCw,
   User,
   Sun,
-  Moon,
-  ShieldCheck,
-  LogOut,
-  Trash2
+  Moon
 } from "lucide-react";
 
 import { Gig, ApplicationFormData, Category, UserProfile } from "./types";
@@ -81,36 +78,8 @@ const HUSTLE_TIPS = [
 export default function App() {
   // Gigs state loaded from localStorage or initialized with seed data
   const [gigs, setGigs] = useState<Gig[]>([]);
-  const [activeTab, setActiveTab] = useState<"browse" | "saved" | "sync" | "my-gigs">("browse");
+  const [activeTab, setActiveTab] = useState<"browse" | "saved" | "sync">("browse");
   const [savedGigIds, setSavedGigIds] = useState<string[]>([]);
-
-  // Auth states
-  const [authToken, setAuthToken] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem("hustlehub_auth_token") || null;
-    } catch (e) {
-      return null;
-    }
-  });
-
-  const [authPhone, setAuthPhone] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem("hustlehub_auth_phone") || null;
-    } catch (e) {
-      return null;
-    }
-  });
-
-  // Track Google token and Sheet ID for backend requests
-  const [googleToken, setGoogleToken] = useState<string | null>(null);
-  const [googleSpreadsheetId, setGoogleSpreadsheetId] = useState<string | null>(null);
-
-  // Login form states
-  const [loginPhone, setLoginPhone] = useState("");
-  const [loginCode, setLoginCode] = useState("");
-  const [loginStep, setLoginStep] = useState<"phone" | "code">("phone");
-  const [isLoginLoading, setIsLoginLoading] = useState(false);
-  const [receivedMockCode, setReceivedMockCode] = useState<string | null>(null);
 
   const handleImportGigs = (imported: Gig[], merge: boolean) => {
     if (merge) {
@@ -302,216 +271,6 @@ export default function App() {
     setProfile(null);
     localStorage.removeItem("hustlehub_profile");
     triggerToast("🗑️ Profile cleared successfully.");
-  };
-
-  const handleSendCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!loginPhone.trim()) {
-      alert("Please enter a valid phone number.");
-      return;
-    }
-
-    // Standardize to international format: clean digits and prepend +233
-    const digits = loginPhone.replace(/\D/g, "");
-    let cleaned = digits;
-    if (digits.startsWith("0")) {
-      cleaned = digits.substring(1);
-    } else if (digits.startsWith("233")) {
-      cleaned = digits.substring(3);
-    }
-
-    if (cleaned.length < 8) {
-      alert("Please enter a valid Ghanaian phone number (e.g. 244123456 or 0244123456).");
-      return;
-    }
-
-    const fullPhone = `+233${cleaned}`;
-    setIsLoginLoading(true);
-
-    try {
-      const response = await fetch("/api/auth/send-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: fullPhone })
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to send verification SMS");
-      }
-
-      const data = await response.json();
-      setReceivedMockCode(data.code || "123456");
-      setLoginStep("code");
-      triggerToast("📱 SMS Code sent! Check the screen banner to auto-fill.");
-    } catch (err: any) {
-      console.error(err);
-      alert(err.message || "Something went wrong. Please try again.");
-    } finally {
-      setIsLoginLoading(false);
-    }
-  };
-
-  const handleVerifyCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!loginCode || loginCode.length !== 6) {
-      alert("Please enter a valid 6-digit code.");
-      return;
-    }
-
-    const digits = loginPhone.replace(/\D/g, "");
-    let cleaned = digits;
-    if (digits.startsWith("0")) {
-      cleaned = digits.substring(1);
-    } else if (digits.startsWith("233")) {
-      cleaned = digits.substring(3);
-    }
-    const fullPhone = `+233${cleaned}`;
-
-    setIsLoginLoading(true);
-    try {
-      const response = await fetch("/api/auth/verify-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: fullPhone, code: loginCode })
-      });
-
-      if (!response.ok) {
-        throw new Error("Invalid verification code. Please check and try again.");
-      }
-
-      const data = await response.json();
-      const token = data.token;
-      const phoneNum = data.phone;
-
-      localStorage.setItem("hustlehub_auth_token", token);
-      localStorage.setItem("hustlehub_auth_phone", phoneNum);
-      setAuthToken(token);
-      setAuthPhone(phoneNum);
-
-      // Pre-fill user profile automatically if none exists, or update the phone number in the profile
-      const savedProfile = localStorage.getItem("hustlehub_profile");
-      let activeProf = null;
-      if (savedProfile) {
-        try {
-          activeProf = JSON.parse(savedProfile);
-        } catch (e) {}
-      }
-
-      const updatedProf = {
-        name: activeProf?.name || "Ghanaian Freelancer",
-        phone: phoneNum,
-        location: activeProf?.location || "East Legon, Accra",
-        customLocation: activeProf?.customLocation || ""
-      };
-
-      setProfile(updatedProf);
-      localStorage.setItem("hustlehub_profile", JSON.stringify(updatedProf));
-
-      triggerToast("💚 Verification successful! Welcome to HustleHub.");
-    } catch (err: any) {
-      console.error(err);
-      alert(err.message || "Failed to verify SMS code.");
-    } finally {
-      setIsLoginLoading(false);
-    }
-  };
-
-  const handleLogout = () => {
-    if (window.confirm("Are you sure you want to log out from HustleHub? Your authentication session will be cleared.")) {
-      setIsProfileDrawerOpen(false);
-      localStorage.removeItem("hustlehub_auth_token");
-      localStorage.removeItem("hustlehub_auth_phone");
-      setAuthToken(null);
-      setAuthPhone(null);
-      triggerToast("🔒 Logged out successfully.");
-    }
-  };
-
-  const handleDeleteAccount = async () => {
-    const confirmed = window.confirm(
-      "🚨 DANGER ZONE: Are you sure you want to PERMANENTLY delete your HustleHub account?\n\nThis will permanently delete your phone number, remove all your posted gigs from Google Sheets, and scrub all local browser data. This cannot be undone."
-    );
-    if (!confirmed) return;
-
-    try {
-      setIsProfileDrawerOpen(false);
-      setIsLoginLoading(true);
-
-      const headers: Record<string, string> = {
-        "Authorization": `Bearer ${authToken}`
-      };
-      if (googleToken) headers["x-google-token"] = googleToken;
-      if (googleSpreadsheetId) headers["x-spreadsheet-id"] = googleSpreadsheetId;
-
-      const response = await fetch("/api/auth/delete-account", {
-        method: "POST",
-        headers
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to delete account from server database");
-      }
-
-      // Remove local gigs matching user phone
-      const cleanPhoneTarget = (authPhone || "").replace(/\D/g, "");
-      const remainingGigs = gigs.filter(gig => {
-        const gigPhone = (gig.userPhone || "").replace(/\D/g, "");
-        return gigPhone !== cleanPhoneTarget;
-      });
-      saveGigs(remainingGigs);
-
-      // Scrub all browser cache/storage
-      localStorage.clear();
-      sessionStorage.clear();
-      
-      // Reset react states
-      setAuthToken(null);
-      setAuthPhone(null);
-      setProfile(null);
-      setSavedGigIds([]);
-      setLoginPhone("");
-      setLoginCode("");
-      setLoginStep("phone");
-      setReceivedMockCode(null);
-
-      triggerToast("🔥 Account and associated posts have been completely wiped!");
-    } catch (err: any) {
-      console.error(err);
-      alert(err.message || "Failed to delete account. Please try again.");
-    } finally {
-      setIsLoginLoading(false);
-    }
-  };
-
-  const handleDeleteGig = async (id: string) => {
-    const confirmed = window.confirm("Are you sure you want to delete this hustle? This action will permanently remove it from the Google Sheet and your feed.");
-    if (!confirmed) return;
-
-    try {
-      const headers: Record<string, string> = {
-        "Authorization": `Bearer ${authToken}`
-      };
-      if (googleToken) headers["x-google-token"] = googleToken;
-      if (googleSpreadsheetId) headers["x-spreadsheet-id"] = googleSpreadsheetId;
-
-      const response = await fetch(`/api/delete-gig/${id}`, {
-        method: "DELETE",
-        headers
-      });
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || "Failed to delete gig from server");
-      }
-
-      // Filter locally too
-      const updated = gigs.filter(g => g.id !== id);
-      saveGigs(updated);
-      triggerToast("🗑️ Hustle deleted successfully!");
-    } catch (err: any) {
-      console.error(err);
-      alert(err.message || "Failed to delete hustle. Please verify you own it.");
-    }
   };
 
   const openPostModal = () => {
@@ -914,46 +673,11 @@ export default function App() {
       posterName: newGig.posterName,
       duration: newGig.duration || "One-time",
       requirements: reqArray,
-      expiresAt,
-      userPhone: authPhone || undefined
+      expiresAt
     };
 
-    // Post to backend Google Sheets API
-    const postToBackend = async () => {
-      try {
-        const headers: Record<string, string> = {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${authToken}`
-        };
-        if (googleToken) headers["x-google-token"] = googleToken;
-        if (googleSpreadsheetId) headers["x-spreadsheet-id"] = googleSpreadsheetId;
-
-        const res = await fetch("/api/gigs", {
-          method: "POST",
-          headers,
-          body: JSON.stringify(newlyCreated)
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          const savedGig = data.gig;
-          const updatedGigs = [savedGig, ...gigs];
-          saveGigs(updatedGigs);
-          triggerToast("🎉 Your Hustle has been posted and synced to Google Sheets!");
-        } else {
-          const updatedGigs = [newlyCreated, ...gigs];
-          saveGigs(updatedGigs);
-          triggerToast("🎉 Posted locally. Google Sheets sync is pending.");
-        }
-      } catch (err) {
-        console.error(err);
-        const updatedGigs = [newlyCreated, ...gigs];
-        saveGigs(updatedGigs);
-        triggerToast("🎉 Posted locally (offline-first mode).");
-      }
-    };
-
-    postToBackend();
+    const updatedGigs = [newlyCreated, ...gigs];
+    saveGigs(updatedGigs);
 
     // Reset Form with profile pre-fill if present
     if (profile) {
@@ -990,6 +714,7 @@ export default function App() {
     }
 
     setIsPostModalOpen(false);
+    triggerToast("🎉 Your Hustle has been posted successfully! It is now live.");
   };
 
   // Initiate Application Modal
@@ -1075,13 +800,6 @@ export default function App() {
     if (activeTab === "saved") {
       return matchesSearch && matchesCategory && matchesLocation && savedGigIds.includes(gig.id);
     }
-    if (activeTab === "my-gigs") {
-      const authDigits = authPhone ? authPhone.replace(/\D/g, "") : "";
-      if (!authDigits) return false;
-      const gigPhoneDigits = gig.userPhone ? gig.userPhone.replace(/\D/g, "") : (gig.whatsapp ? gig.whatsapp.replace(/\D/g, "") : "");
-      const isOwned = gigPhoneDigits.length > 5 && (gigPhoneDigits.endsWith(authDigits) || authDigits.endsWith(gigPhoneDigits));
-      return isOwned && matchesSearch && matchesCategory && matchesLocation;
-    }
     return matchesSearch && matchesCategory && matchesLocation;
   });
 
@@ -1098,135 +816,6 @@ export default function App() {
     if (hrs < 24) return `${hrs}h ago`;
     return `${days}d ago`;
   };
-
-  if (!authToken) {
-    return (
-      <div 
-        className="min-h-screen bg-dark-bg flex items-center justify-center p-4 selection:bg-accent-teal selection:text-white"
-        style={getBackgroundStyle()}
-      >
-        <div className="w-full max-w-md bg-dark-surface border border-teal-800/60 rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden space-y-6">
-          <div className="absolute top-0 right-0 w-32 h-32 rounded-full bg-accent-teal/5 blur-2xl animate-pulse" />
-          
-          <div className="text-center space-y-2">
-            <div className="w-16 h-16 rounded-2xl bg-accent-teal flex items-center justify-center shadow-lg text-white font-extrabold text-3xl mx-auto">
-              H
-            </div>
-            <h1 className="text-2xl font-black tracking-tight text-white mt-4">
-              Hustle<span className="text-accent-teal">Hub</span> Ghana
-            </h1>
-            <p className="text-xs text-teal-200/70 font-semibold uppercase tracking-wider">
-              Connecting Ghana's Freelancers 🇬🇭
-            </p>
-          </div>
-
-          {loginStep === "phone" ? (
-            <form onSubmit={handleSendCode} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase text-teal-200/60 tracking-wider">
-                  Enter Your Phone Number
-                </label>
-                <div className="flex gap-2">
-                  <div className="bg-dark-bg border border-teal-900 rounded-xl px-3 py-2.5 text-xs text-teal-300 font-bold flex items-center gap-1.5">
-                    <span>🇬🇭</span>
-                    <span>+233</span>
-                  </div>
-                  <input
-                    type="tel"
-                    required
-                    placeholder="e.g. 244123456 or 0553987654"
-                    value={loginPhone}
-                    onChange={(e) => setLoginPhone(e.target.value)}
-                    className="flex-1 bg-dark-bg border border-teal-900 focus:border-accent-teal rounded-xl py-2.5 px-3.5 text-xs text-white placeholder-teal-700/80 focus:outline-none transition-all font-bold"
-                  />
-                </div>
-                <span className="text-[10px] text-teal-300/40 leading-relaxed block">
-                  Enter your Ghana phone number. We support formats starting with 0 or the rest of the digits.
-                </span>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isLoginLoading}
-                className="w-full bg-accent-teal hover:bg-teal-600 text-white py-3 rounded-xl text-xs font-black transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50 flex items-center justify-center space-x-2"
-              >
-                {isLoginLoading ? (
-                  <RefreshCw size={14} className="animate-spin" />
-                ) : (
-                  <>
-                    <Send size={14} />
-                    <span>Send Verification SMS</span>
-                  </>
-                )}
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={handleVerifyCode} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase text-teal-200/60 tracking-wider">
-                  Enter 6-Digit SMS Code
-                </label>
-                <input
-                  type="text"
-                  required
-                  maxLength={6}
-                  placeholder="e.g. 123456"
-                  value={loginCode}
-                  onChange={(e) => setLoginCode(e.target.value.replace(/\D/g, ""))}
-                  className="w-full bg-dark-bg border border-teal-900 focus:border-accent-teal rounded-xl py-2.5 px-3.5 text-center text-sm tracking-widest text-white placeholder-teal-700 focus:outline-none transition-all font-black font-mono animate-fadeIn"
-                />
-                
-                {receivedMockCode && (
-                  <div className="bg-teal-950/20 p-3 rounded-xl border border-teal-900/60 text-center animate-fadeIn">
-                    <p className="text-[10px] text-teal-200/90 font-medium">
-                      📱 Mock SMS sent! Enter code: <strong className="text-ghana-gold font-mono font-black text-xs">{receivedMockCode}</strong>
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setLoginCode(receivedMockCode)}
-                      className="text-[9px] text-accent-teal hover:underline font-extrabold uppercase mt-1 tracking-wider"
-                    >
-                      Click to Auto-fill Code
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLoginStep("phone");
-                    setReceivedMockCode(null);
-                  }}
-                  className="w-1/3 bg-dark-bg hover:bg-teal-950/40 border border-teal-900/60 text-teal-300 py-3 rounded-xl text-xs font-black transition-all cursor-pointer text-center"
-                >
-                  Back
-                </button>
-                <button
-                  type="submit"
-                  disabled={isLoginLoading}
-                  className="flex-1 bg-accent-teal hover:bg-teal-600 text-white py-3 rounded-xl text-xs font-black transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50 flex items-center justify-center space-x-2"
-                >
-                  {isLoginLoading ? (
-                    <RefreshCw size={14} className="animate-spin" />
-                  ) : (
-                    <span>Verify & Continue</span>
-                  )}
-                </button>
-              </div>
-            </form>
-          )}
-
-          <div className="text-center pt-2 border-t border-teal-900/30">
-            <p className="text-[9px] text-teal-300/40">
-              By continuing, you agree to secure SMS verification. Code is mocked server-side. Secure fallback: "123456" always works.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div 
@@ -1461,16 +1050,6 @@ export default function App() {
                     {savedGigIds.length}
                   </span>
                 )}
-              </button>
-              <button
-                onClick={() => setActiveTab("my-gigs")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === "my-gigs" 
-                    ? "bg-accent-teal text-white shadow-md" 
-                    : "text-teal-200 hover:text-white"
-                }`}
-              >
-                My Gigs
               </button>
               <button
                 onClick={() => setActiveTab("sync")}
@@ -1823,18 +1402,6 @@ export default function App() {
 
                         {/* Action Buttons */}
                         <div className="flex items-center space-x-2">
-                          {/* Delete button (exclusively for owner in my-gigs) */}
-                          {activeTab === "my-gigs" && (
-                            <button
-                              onClick={() => handleDeleteGig(gig.id)}
-                              className="px-3 py-2 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-900/40 rounded-xl text-xs font-bold text-rose-300 hover:text-rose-200 flex items-center space-x-1.5 cursor-pointer transition-all active:scale-95"
-                              title="Permanently delete this hustle"
-                            >
-                              <Trash2 size={13} />
-                              <span>Delete</span>
-                            </button>
-                          )}
-
                           {/* Bookmark button */}
                           <button
                             onClick={() => toggleSaveGig(gig.id)}
@@ -2371,10 +1938,6 @@ export default function App() {
         setBgType={handleSetBgType}
         customBgUrl={customBgUrl}
         setCustomBgUrl={handleSetCustomBgUrl}
-        isAuthenticated={!!authToken}
-        userPhone={authPhone || undefined}
-        onLogout={handleLogout}
-        onDeleteAccount={handleDeleteAccount}
       />
 
     </div>

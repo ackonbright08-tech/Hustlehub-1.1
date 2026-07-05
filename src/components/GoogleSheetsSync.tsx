@@ -31,10 +31,9 @@ interface GoogleSheetsSyncProps {
   currentGigs: Gig[];
   onImportGigs: (imported: Gig[], merge: boolean) => void;
   triggerToast: (msg: string) => void;
-  onTokensChanged?: (token: string | null, sheetId: string | null) => void;
 }
 
-export default function GoogleSheetsSync({ currentGigs, onImportGigs, triggerToast, onTokensChanged }: GoogleSheetsSyncProps) {
+export default function GoogleSheetsSync({ currentGigs, onImportGigs, triggerToast }: GoogleSheetsSyncProps) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -43,13 +42,6 @@ export default function GoogleSheetsSync({ currentGigs, onImportGigs, triggerToa
   const [selectedSheetId, setSelectedSheetId] = useState<string>('');
   const [activeSheet, setActiveSheet] = useState<SpreadsheetInfo | null>(null);
   const [importMergeMode, setImportMergeMode] = useState<boolean>(true); // true = merge, false = replace
-
-  // Track tokens and pass to parent
-  useEffect(() => {
-    if (onTokensChanged) {
-      onTokensChanged(token, selectedSheetId || null);
-    }
-  }, [token, selectedSheetId, onTokensChanged]);
 
   // Initialize auth listener
   useEffect(() => {

@@ -104,8 +104,7 @@ export const exportGigsToSpreadsheet = async (
       'Duration',
       'Key Requirements',
       'Created At',
-      'Description',
-      'User Phone'
+      'Description'
     ];
     
     const dataRows = gigs.map(gig => [
@@ -119,8 +118,7 @@ export const exportGigsToSpreadsheet = async (
       gig.duration || 'One-time',
       (gig.requirements || []).join(', '),
       gig.createdAt,
-      gig.description,
-      gig.userPhone || ''
+      gig.description
     ]);
     
     const values = [headerRow, ...dataRows];
@@ -244,7 +242,7 @@ export const importGigsFromSpreadsheet = async (
     // 3. Parse headers and rows
     const importedGigs: Gig[] = [];
     
-    // Header format: ['Gig ID', 'Title', 'Category', 'Budget (GHS)', 'WhatsApp Contact', 'Location', 'Poster Name', 'Duration', 'Key Requirements', 'Created At', 'Description', 'User Phone']
+    // Header format: ['Gig ID', 'Title', 'Category', 'Budget (GHS)', 'WhatsApp Contact', 'Location', 'Poster Name', 'Duration', 'Key Requirements', 'Created At', 'Description']
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
       if (!row || row.length < 2 || !row[1]) continue; // Title is required
@@ -270,7 +268,6 @@ export const importGigsFromSpreadsheet = async (
         requirements,
         createdAt: row[9] || new Date().toISOString(),
         description: row[10] || '',
-        userPhone: row[11] || '',
       });
     }
     
