@@ -343,6 +343,91 @@ async function performWipeAccountLogic(req: express.Request, res: express.Respon
 app.post("/api/auth/wipe-account", performWipeAccountLogic);
 app.delete("/api/wipe-account", performWipeAccountLogic);
 
+// Global gigs cache as fail-safe backup for multi-user resilient viewing
+let gigsCache: any[] = [];
+
+// GET /api/gigs fetches all gigs from Google Sheets globally (without any user phone filtering)
+app.get("/api/gigs", async (req, res) => {
+  let googleToken = req.headers["x-google-token"] as string;
+  let spreadsheetId = req.headers["x-spreadsheet-id"] as string;
+
+  if (googleToken === "null" || googleToken === "undefined") googleToken = "";
+  if (spreadsheetId === "null" || spreadsheetId === "undefined") spreadsheetId = "";
+
+  if (!googleToken || !spreadsheetId) {
+    console.log("Total gigs sent to client:", gigsCache.length);
+    return res.json(gigsCache);
+  }
+
+  try {
+    const metaRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, {
+      headers: { Authorization: `Bearer ${googleToken}` },
+    });
+
+    if (!metaRes.ok) {
+      throw new Error(`Spreadsheet meta fetch failed: ${metaRes.statusText}`);
+    }
+
+    const metaData = await metaRes.json();
+    const sheetName = metaData.sheets?.[0]?.properties?.title || 'Sheet1';
+
+    const sheetRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:L1000`, {
+      headers: { Authorization: `Bearer ${googleToken}` },
+    });
+
+    if (!sheetRes.ok) {
+      throw new Error(`Spreadsheet values fetch failed: ${sheetRes.statusText}`);
+    }
+
+    const data = await sheetRes.json();
+    const rows = data.values as string[][];
+
+    if (!rows || rows.length <= 1) {
+      gigsCache = [];
+      console.log("Total gigs sent to client:", gigsCache.length);
+      return res.json([]);
+    }
+
+    const fetchedGigs: any[] = [];
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || row.length < 2 || !row[1]) continue;
+
+      const requirementsStr = row[8] || '';
+      const requirements = requirementsStr
+        ? requirementsStr.split(',').map((r: string) => r.trim()).filter(Boolean)
+        : [];
+
+      const rawWhatsApp = row[4] || '';
+      const cleanedWhatsApp = rawWhatsApp.replace(/\D/g, '') || '233240000000';
+
+      fetchedGigs.push({
+        id: row[0] || `gig-imported-${Date.now()}-${i}`,
+        title: row[1],
+        category: (row[2] || 'other').toLowerCase(),
+        budget: parseFloat(row[3]) || 0,
+        whatsapp: cleanedWhatsApp,
+        location: row[5] || 'Accra',
+        posterName: row[6] || 'Community Poster',
+        duration: row[7] || 'One-time',
+        requirements,
+        createdAt: row[9] || new Date().toISOString(),
+        description: row[10] || '',
+        userPhone: row[11] || '',
+      });
+    }
+
+    gigsCache = fetchedGigs;
+    console.log("Total gigs sent to client:", gigsCache.length);
+    return res.json(gigsCache);
+
+  } catch (error: any) {
+    console.warn("Failed to fetch gigs from Google Sheet, returning cached copy:", error);
+    console.log("Total gigs sent to client:", gigsCache.length);
+    return res.json(gigsCache);
+  }
+});
+
 // Initialize Gemini SDK with telemetry header
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
