@@ -29,7 +29,8 @@ import {
   RefreshCw,
   User,
   Sun,
-  Moon
+  Moon,
+  Trash2
 } from "lucide-react";
 
 import { Gig, ApplicationFormData, Category, UserProfile } from "./types";
@@ -65,6 +66,18 @@ const cleanWhatsAppNumber = (num: string): string => {
   return digits.startsWith("233") ? digits : "233" + digits;
 };
 
+// Format a raw input phone number to the standard Ghana international format "+233..."
+const formatGhanaPhone = (num: string): string => {
+  const digits = num.replace(/\D/g, "");
+  if (digits.startsWith("233")) {
+    return "+" + digits;
+  }
+  if (digits.startsWith("0")) {
+    return "+233" + digits.substring(1);
+  }
+  return "+233" + digits;
+};
+
 // Beautiful Hustle Tips for Ghanaian Freelancers
 const HUSTLE_TIPS = [
   "Verify details with your client over WhatsApp before traveling.",
@@ -78,8 +91,39 @@ const HUSTLE_TIPS = [
 export default function App() {
   // Gigs state loaded from localStorage or initialized with seed data
   const [gigs, setGigs] = useState<Gig[]>([]);
-  const [activeTab, setActiveTab] = useState<"browse" | "saved" | "sync">("browse");
+  const [activeTab, setActiveTab] = useState<"browse" | "saved" | "mygigs" | "sync">("browse");
   const [savedGigIds, setSavedGigIds] = useState<string[]>([]);
+
+  // SMS Authentication states
+  const [smsToken, setSmsToken] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("hustlehub_sms_token") || null;
+    } catch (e) {
+      return null;
+    }
+  });
+  const [smsPhone, setSmsPhone] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("hustlehub_sms_phone") || null;
+    } catch (e) {
+      return null;
+    }
+  });
+  const [loginStep, setLoginStep] = useState<"phone" | "verify">("phone");
+  const [phoneInput, setPhoneInput] = useState("");
+  const [codeInput, setCodeInput] = useState("");
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [sandboxCode, setSandboxCode] = useState<string | null>(null);
+
+  // Google Sheets states propagated from GoogleSheetsSync
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [activeSheetId, setActiveSheetId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("hustlehub_active_sheet_id") || null;
+    } catch (e) {
+      return null;
+    }
+  });
 
   const handleImportGigs = (imported: Gig[], merge: boolean) => {
     if (merge) {
@@ -673,7 +717,8 @@ export default function App() {
       posterName: newGig.posterName,
       duration: newGig.duration || "One-time",
       requirements: reqArray,
-      expiresAt
+      expiresAt,
+      userPhone: smsPhone || undefined
     };
 
     const updatedGigs = [newlyCreated, ...gigs];
@@ -754,6 +799,221 @@ export default function App() {
     }, 800);
   };
 
+  // Handler to request verification code
+  const handleRequestCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!phoneInput.trim()) {
+      alert("Please enter a phone number.");
+      return;
+    }
+
+    const formatted = formatGhanaPhone(phoneInput);
+    setIsAuthLoading(true);
+
+    try {
+      const res = await fetch("/api/auth/send-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: formatted })
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to send verification code");
+      }
+
+      const data = await res.json();
+      if (data.success) {
+        setSandboxCode(data.code || "123456");
+        setLoginStep("verify");
+        triggerToast("🔑 Verification code sent! Check the sandbox indicator below.");
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to send verification code. Please try again.");
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  // Handler to verify 6-digit SMS code
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!codeInput || codeInput.length < 6) {
+      alert("Please enter a valid 6-digit code.");
+      return;
+    }
+
+    const formatted = formatGhanaPhone(phoneInput);
+    setIsAuthLoading(true);
+
+    try {
+      const res = await fetch("/api/auth/verify-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: formatted, code: codeInput })
+      });
+
+      if (!res.ok) {
+        alert("Invalid or expired code. Please try again.");
+        return;
+      }
+
+      const data = await res.json();
+      if (data.success && data.token) {
+        // Save state
+        localStorage.setItem("hustlehub_sms_token", data.token);
+        localStorage.setItem("hustlehub_sms_phone", data.phone);
+        
+        setSmsToken(data.token);
+        setSmsPhone(data.phone);
+        
+        // Pre-fill profile phone number!
+        const existingProfile = localStorage.getItem("hustlehub_profile");
+        let updatedProfile: UserProfile = {
+          name: "",
+          phone: data.phone,
+          location: "East Legon, Accra"
+        };
+        if (existingProfile) {
+          try {
+            updatedProfile = {
+              ...JSON.parse(existingProfile),
+              phone: data.phone
+            };
+          } catch (e) {}
+        }
+        setProfile(updatedProfile);
+        localStorage.setItem("hustlehub_profile", JSON.stringify(updatedProfile));
+
+        triggerToast("🎉 Welcome to HustleHub! Login successful.");
+      }
+    } catch (err: any) {
+      alert(err.message || "Login failed.");
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  // Logout handler
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem("hustlehub_sms_token");
+      localStorage.removeItem("hustlehub_sms_phone");
+    } catch (e) {}
+
+    setSmsToken(null);
+    setSmsPhone(null);
+    setLoginStep("phone");
+    setPhoneInput("");
+    setCodeInput("");
+    setSandboxCode(null);
+    setIsProfileDrawerOpen(false);
+
+    triggerToast("👋 Logged out successfully. See you soon!");
+  };
+
+  // Account Wiping / Deletion Handler
+  const handleDeleteAccount = async () => {
+    const confirmed = window.confirm(
+      "⚠️ WARNING: PERMANENT ACCOUNT DELETION\n\nAre you sure you want to permanently wipe your account? This will delete all of your posted hustles from Google Sheets, clear your verification status, and completely scrub ALL application data and cache from this browser."
+    );
+    if (!confirmed) return;
+
+    const secondConfirm = window.confirm(
+      "🔥 FINAL CONFIRMATION\n\nThis action cannot be undone. All your booked/saved items and history will be lost. Wipe everything now?"
+    );
+    if (!secondConfirm) return;
+
+    try {
+      triggerToast("⏳ Purging account and posts from server...");
+      
+      await fetch("/api/auth/wipe-account", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${smsToken}`,
+          "x-google-token": googleToken || "",
+          "x-spreadsheet-id": activeSheetId || ""
+        }
+      });
+
+      // Completely scrub local browser cache and localStorage
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+        
+        // If there are service workers or caches, clear them
+        if (window.caches) {
+          const keys = await caches.keys();
+          for (const key of keys) {
+            await caches.delete(key);
+          }
+        }
+      } catch (e) {
+        console.error("Local storage clear failed", e);
+      }
+
+      // Reset state and redirect
+      setSmsToken(null);
+      setSmsPhone(null);
+      setGigs([]);
+      setSavedGigIds([]);
+      setProfile(null);
+      setLoginStep("phone");
+      setPhoneInput("");
+      setCodeInput("");
+      setSandboxCode(null);
+      setIsProfileDrawerOpen(false);
+
+      triggerToast("🔥 Account wiped successfully. Local cache scrubbed.");
+
+    } catch (error) {
+      console.error("Failed to wipe account:", error);
+      triggerToast("❌ Purge failed. Local storage was cleared.");
+      // Fallback local clear
+      localStorage.clear();
+      setSmsToken(null);
+    }
+  };
+
+  // Individual post delete action
+  const handleDeleteGig = async (gigId: string) => {
+    if (!window.confirm("Are you sure you want to permanently delete this Hustle? This will remove it locally and from your connected Google Sheet database.")) {
+      return;
+    }
+
+    try {
+      // Call the backend DELETE route
+      const response = await fetch(`/api/delete-gig/${gigId}`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${smsToken}`,
+          "x-google-token": googleToken || "",
+          "x-spreadsheet-id": activeSheetId || ""
+        }
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          triggerToast("❌ Session expired. Please log in again.");
+          handleLogout();
+          return;
+        }
+      }
+
+      // Filter out of local gigs state
+      const updated = gigs.filter(g => g.id !== gigId);
+      saveGigs(updated);
+      triggerToast("🗑️ Hustle successfully deleted!");
+
+    } catch (err: any) {
+      console.error("Failed to delete gig:", err);
+      // Still remove locally to be resilient
+      const updated = gigs.filter(g => g.id !== gigId);
+      saveGigs(updated);
+      triggerToast("🗑️ Hustle removed from your device.");
+    }
+  };
+
   // Filter computations
   const filteredGigs = gigs.filter(gig => {
     const matchesSearch = 
@@ -800,6 +1060,12 @@ export default function App() {
     if (activeTab === "saved") {
       return matchesSearch && matchesCategory && matchesLocation && savedGigIds.includes(gig.id);
     }
+    if (activeTab === "mygigs") {
+      const cleanSmsPhone = (smsPhone || "").replace(/\D/g, "");
+      const matchesPhone = (gig.userPhone || "").replace(/\D/g, "") === cleanSmsPhone || 
+                           gig.whatsapp.replace(/\D/g, "") === cleanSmsPhone;
+      return matchesSearch && matchesCategory && matchesLocation && matchesPhone;
+    }
     return matchesSearch && matchesCategory && matchesLocation;
   });
 
@@ -816,6 +1082,179 @@ export default function App() {
     if (hrs < 24) return `${hrs}h ago`;
     return `${days}d ago`;
   };
+
+  if (!smsToken) {
+    return (
+      <div 
+        className="min-h-screen bg-dark-bg text-white flex flex-col justify-center items-center p-4 antialiased selection:bg-accent-teal"
+        style={getBackgroundStyle()}
+      >
+        {/* Toast System inside Auth */}
+        <AnimatePresence>
+          {toastMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: -50, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.95 }}
+              className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-md bg-dark-card border-l-4 border-accent-teal text-white p-4 rounded-xl shadow-2xl flex items-center justify-between"
+            >
+              <div className="flex items-center space-x-3">
+                <span className="text-xl">🇬🇭</span>
+                <p className="text-sm font-semibold text-teal-50">{toastMessage}</p>
+              </div>
+              <button onClick={() => setToastMessage(null)} className="text-teal-200 hover:text-white ml-2">
+                <X size={18} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="w-full max-w-md bg-dark-surface border border-teal-800/50 rounded-3xl p-6 md:p-8 shadow-2xl space-y-6 relative overflow-hidden">
+          {/* Logo */}
+          <div className="flex flex-col items-center space-y-3">
+            <div className="w-14 h-14 rounded-2xl bg-accent-teal flex items-center justify-center shadow-xl text-white font-black text-2xl tracking-tighter">
+              H
+            </div>
+            <div className="text-center">
+              <h1 className="text-2xl font-black tracking-tight text-white flex items-center justify-center space-x-1.5">
+                <span>Hustle</span><span className="text-accent-teal">Hub</span>
+              </h1>
+              <p className="text-[10px] text-teal-300 font-bold uppercase tracking-wider mt-1">
+                Ghana Phone Authentication 🇬🇭
+              </p>
+            </div>
+          </div>
+
+          <AnimatePresence mode="wait">
+            {loginStep === "phone" ? (
+              <motion.form
+                key="phone-step"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 10 }}
+                onSubmit={handleRequestCode}
+                className="space-y-4"
+              >
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase text-teal-200/60 tracking-wider">
+                    Enter Ghana Phone Number
+                  </label>
+                  
+                  <div className="flex items-center bg-dark-bg border border-teal-900 focus-within:border-accent-teal rounded-xl overflow-hidden transition-all px-3 py-1.5">
+                    <span className="text-xs font-bold text-teal-400 mr-2 border-r border-teal-900/60 pr-2">🇬🇭 +233</span>
+                    <input
+                      type="tel"
+                      placeholder="e.g. 24 123 4567 or 0244123456"
+                      value={phoneInput}
+                      onChange={(e) => setPhoneInput(e.target.value)}
+                      disabled={isAuthLoading}
+                      required
+                      className="w-full bg-transparent text-xs font-bold text-white focus:outline-none placeholder-teal-800/80"
+                    />
+                  </div>
+                  <span className="text-[9px] text-teal-300/40 block">
+                    Supports all formats: e.g. 0244123456, 244123456, or +233244123456.
+                  </span>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isAuthLoading}
+                  className="w-full bg-accent-teal hover:bg-teal-600 disabled:opacity-50 text-white py-3 rounded-xl text-xs font-extrabold transition-all shadow-lg active:scale-95 flex items-center justify-center space-x-2 cursor-pointer"
+                >
+                  {isAuthLoading ? (
+                    <RefreshCw className="animate-spin" size={14} />
+                  ) : (
+                    <span>Request 6-Digit SMS Code</span>
+                  )}
+                </button>
+              </motion.form>
+            ) : (
+              <motion.form
+                key="verify-step"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                onSubmit={handleVerifyCode}
+                className="space-y-4"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold uppercase text-teal-200/60 tracking-wider">
+                      Enter 6-Digit Verification Code
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setLoginStep("phone")}
+                      className="text-[10px] font-bold text-accent-teal hover:underline hover:text-teal-400"
+                    >
+                      Change Number
+                    </button>
+                  </div>
+                  
+                  <div className="flex items-center bg-dark-bg border border-teal-900 focus-within:border-accent-teal rounded-xl overflow-hidden transition-all px-3 py-3">
+                    <input
+                      type="text"
+                      placeholder="e.g. 123456"
+                      maxLength={6}
+                      pattern="\d{6}"
+                      required
+                      value={codeInput}
+                      onChange={(e) => setCodeInput(e.target.value)}
+                      disabled={isAuthLoading}
+                      className="w-full bg-transparent text-center tracking-[0.5em] text-sm font-black text-white focus:outline-none placeholder-teal-800/80"
+                    />
+                  </div>
+                  
+                  <p className="text-[10px] text-teal-200/70 text-center mt-1">
+                    Sent to: <strong className="font-mono">{formatGhanaPhone(phoneInput)}</strong>
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isAuthLoading}
+                  className="w-full bg-accent-teal hover:bg-teal-600 disabled:opacity-50 text-white py-3 rounded-xl text-xs font-extrabold transition-all shadow-lg active:scale-95 flex items-center justify-center space-x-2 cursor-pointer"
+                >
+                  {isAuthLoading ? (
+                    <RefreshCw className="animate-spin" size={14} />
+                  ) : (
+                    <span>Verify Code & Login</span>
+                  )}
+                </button>
+
+                {sandboxCode && (
+                  <div className="bg-accent-teal/10 border border-accent-teal/30 p-3 rounded-2xl text-center">
+                    <p className="text-[10px] text-teal-200 leading-normal">
+                      ✨ <strong>SMS SANDBOX SIMULATOR:</strong>
+                    </p>
+                    <p 
+                      className="text-xs text-white font-extrabold tracking-widest font-mono mt-1 select-all cursor-pointer animate-pulse" 
+                      title="Click to copy & auto-fill" 
+                      onClick={() => {
+                        setCodeInput(sandboxCode);
+                        triggerToast("📋 Copied code & filled!");
+                      }}
+                    >
+                      {sandboxCode}
+                    </p>
+                    <p className="text-[9px] text-teal-300/40 mt-1">Click the code above to auto-fill!</p>
+                  </div>
+                )}
+              </motion.form>
+            )}
+          </AnimatePresence>
+
+          <div className="bg-dark-bg/50 p-3.5 rounded-2xl border border-teal-950/60 flex items-start space-x-2 text-left">
+            <span className="text-sm">🛡️</span>
+            <span className="text-[9px] text-teal-200/60 leading-relaxed font-semibold">
+              HustleHub utilizes sandbox-secure local verification for testing and immediate deployment in Ghana's network boundaries. No SMS rates apply.
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div 
@@ -1052,6 +1491,16 @@ export default function App() {
                 )}
               </button>
               <button
+                onClick={() => setActiveTab("mygigs")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === "mygigs" 
+                    ? "bg-accent-teal text-white shadow-md" 
+                    : "text-teal-200 hover:text-white"
+                }`}
+              >
+                My Gigs
+              </button>
+              <button
                 onClick={() => setActiveTab("sync")}
                 className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   activeTab === "sync" 
@@ -1213,6 +1662,15 @@ export default function App() {
             currentGigs={gigs}
             onImportGigs={handleImportGigs}
             triggerToast={triggerToast}
+            onAuthChange={(token) => setGoogleToken(token)}
+            onSpreadsheetChange={(sheetId) => {
+              setActiveSheetId(sheetId);
+              if (sheetId) {
+                localStorage.setItem("hustlehub_active_sheet_id", sheetId);
+              } else {
+                localStorage.removeItem("hustlehub_active_sheet_id");
+              }
+            }}
           />
         ) : (
           <section className="space-y-3">
@@ -1426,14 +1884,24 @@ export default function App() {
                             {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                           </button>
 
-                          {/* Instant apply button */}
-                          <button
-                            onClick={() => openApplyModal(gig)}
-                            className="bg-accent-teal hover:bg-teal-600 active:scale-95 text-white px-4 py-2 rounded-xl text-xs font-extrabold flex items-center space-x-1.5 transition-all shadow-md cursor-pointer"
-                          >
-                            <span>Apply</span>
-                            <Send size={12} className="text-ghana-gold" />
-                          </button>
+                          {/* Instant apply or delete button */}
+                          {activeTab === "mygigs" ? (
+                            <button
+                              onClick={() => handleDeleteGig(gig.id)}
+                              className="bg-red-600 hover:bg-red-700 active:scale-95 text-white px-4 py-2 rounded-xl text-xs font-extrabold flex items-center space-x-1.5 transition-all shadow-md cursor-pointer"
+                            >
+                              <Trash2 size={12} />
+                              <span>Delete</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => openApplyModal(gig)}
+                              className="bg-accent-teal hover:bg-teal-600 active:scale-95 text-white px-4 py-2 rounded-xl text-xs font-extrabold flex items-center space-x-1.5 transition-all shadow-md cursor-pointer"
+                            >
+                              <span>Apply</span>
+                              <Send size={12} className="text-ghana-gold" />
+                            </button>
+                          )}
                         </div>
 
                       </div>
@@ -1938,6 +2406,8 @@ export default function App() {
         setBgType={handleSetBgType}
         customBgUrl={customBgUrl}
         setCustomBgUrl={handleSetCustomBgUrl}
+        onLogout={handleLogout}
+        onDeleteAccount={handleDeleteAccount}
       />
 
     </div>

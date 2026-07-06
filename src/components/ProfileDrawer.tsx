@@ -17,6 +17,8 @@ interface ProfileDrawerProps {
   setBgType: (bgType: string) => void;
   customBgUrl: string;
   setCustomBgUrl: (url: string) => void;
+  onLogout?: () => void;
+  onDeleteAccount?: () => void;
 }
 
 export default function ProfileDrawer({
@@ -31,7 +33,9 @@ export default function ProfileDrawer({
   bgType,
   setBgType,
   customBgUrl,
-  setCustomBgUrl
+  setCustomBgUrl,
+  onLogout,
+  onDeleteAccount
 }: ProfileDrawerProps) {
   const [profile, setProfile] = useState<UserProfile>({
     name: '',
@@ -368,6 +372,39 @@ export default function ProfileDrawer({
                     </span>
                   </div>
                 )}
+              </div>
+
+              {/* Account Security / Lifecycle */}
+              <div className="space-y-3 pt-6 border-t border-teal-900/40">
+                <h3 className="text-[10px] font-bold uppercase text-teal-200/50 tracking-wider">
+                  Session & Account Security
+                </h3>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  {onLogout && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm("Are you sure you want to log out of HustleHub? Your SMS session will be cleared.")) {
+                          onLogout();
+                        }
+                      }}
+                      className="py-2.5 px-3 rounded-xl border border-teal-900/60 bg-dark-bg/40 text-teal-300 hover:text-white hover:bg-teal-900/30 text-xs font-bold flex items-center justify-center transition-all cursor-pointer"
+                    >
+                      <span>Log Out</span>
+                    </button>
+                  )}
+                  
+                  {onDeleteAccount && (
+                    <button
+                      type="button"
+                      onClick={onDeleteAccount}
+                      className="py-2.5 px-3 rounded-xl border border-red-950/60 bg-red-950/10 text-red-400 hover:text-red-300 hover:bg-red-950/20 text-xs font-bold flex items-center justify-center transition-all cursor-pointer"
+                    >
+                      <span>Wipe Account</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
             </form>

@@ -31,9 +31,17 @@ interface GoogleSheetsSyncProps {
   currentGigs: Gig[];
   onImportGigs: (imported: Gig[], merge: boolean) => void;
   triggerToast: (msg: string) => void;
+  onAuthChange?: (token: string | null) => void;
+  onSpreadsheetChange?: (sheetId: string | null) => void;
 }
 
-export default function GoogleSheetsSync({ currentGigs, onImportGigs, triggerToast }: GoogleSheetsSyncProps) {
+export default function GoogleSheetsSync({ 
+  currentGigs, 
+  onImportGigs, 
+  triggerToast,
+  onAuthChange,
+  onSpreadsheetChange
+}: GoogleSheetsSyncProps) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -42,6 +50,7 @@ export default function GoogleSheetsSync({ currentGigs, onImportGigs, triggerToa
   const [selectedSheetId, setSelectedSheetId] = useState<string>('');
   const [activeSheet, setActiveSheet] = useState<SpreadsheetInfo | null>(null);
   const [importMergeMode, setImportMergeMode] = useState<boolean>(true); // true = merge, false = replace
+  const [signInError, setSignInError] = useState<string | null>(null);
 
   // Initialize auth listener
   useEffect(() => {
@@ -50,6 +59,7 @@ export default function GoogleSheetsSync({ currentGigs, onImportGigs, triggerToa
         setUser(currentUser);
         setToken(accessToken);
         setIsLoading(false);
+        if (onAuthChange) onAuthChange(accessToken);
         // Load spreadsheets once token is verified
         fetchSpreadsheets(accessToken);
       },
@@ -57,6 +67,7 @@ export default function GoogleSheetsSync({ currentGigs, onImportGigs, triggerToa
         setUser(null);
         setToken(null);
         setIsLoading(false);
+        if (onAuthChange) onAuthChange(null);
       }
     );
     return () => unsubscribe();
@@ -71,6 +82,7 @@ export default function GoogleSheetsSync({ currentGigs, onImportGigs, triggerToa
       if (list.length > 0 && !selectedSheetId) {
         setSelectedSheetId(list[0].id);
         setActiveSheet(list[0]);
+        if (onSpreadsheetChange) onSpreadsheetChange(list[0].id);
       }
     } catch (err) {
       console.error('Error fetching sheets:', err);
@@ -79,16 +91,20 @@ export default function GoogleSheetsSync({ currentGigs, onImportGigs, triggerToa
 
   const handleSignIn = async () => {
     setIsLoading(true);
+    setSignInError(null);
     try {
       const result = await googleSignIn();
       if (result) {
         setUser(result.user);
         setToken(result.accessToken);
+        if (onAuthChange) onAuthChange(result.accessToken);
         triggerToast('👋 Signed in with Google successfully!');
         await fetchSpreadsheets(result.accessToken);
       }
     } catch (err: any) {
       console.error(err);
+      const errMsg = err?.message || String(err);
+      setSignInError(errMsg);
       triggerToast('❌ Google Sign-In failed or was cancelled');
     } finally {
       setIsLoading(false);
@@ -104,6 +120,8 @@ export default function GoogleSheetsSync({ currentGigs, onImportGigs, triggerToa
         setSpreadsheets([]);
         setActiveSheet(null);
         setSelectedSheetId('');
+        if (onAuthChange) onAuthChange(null);
+        if (onSpreadsheetChange) onSpreadsheetChange(null);
         triggerToast('Signed out of Google Workspace');
       } catch (err) {
         console.error(err);
@@ -119,6 +137,7 @@ export default function GoogleSheetsSync({ currentGigs, onImportGigs, triggerToa
       setSpreadsheets(prev => [newSheet, ...prev]);
       setSelectedSheetId(newSheet.id);
       setActiveSheet(newSheet);
+      if (onSpreadsheetChange) onSpreadsheetChange(newSheet.id);
       triggerToast('🎉 Google Sheet created successfully in Google Drive!');
     } catch (err) {
       console.error(err);
@@ -131,6 +150,7 @@ export default function GoogleSheetsSync({ currentGigs, onImportGigs, triggerToa
   const handleSheetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = e.target.value;
     setSelectedSheetId(id);
+    if (onSpreadsheetChange) onSpreadsheetChange(id);
     const found = spreadsheets.find(s => s.id === id);
     if (found) {
       setActiveSheet(found);
@@ -241,6 +261,48 @@ export default function GoogleSheetsSync({ currentGigs, onImportGigs, triggerToa
               We strictly respect your privacy. No credentials or personal info are ever stored outside your local browser.
             </span>
           </div>
+
+          {/* Iframe detection notice */}
+          {window.self !== window.top && (
+            <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-2xl flex items-start space-x-2.5">
+              <AlertTriangle className="text-amber-400 mt-0.5 flex-shrink-0" size={16} />
+              <div className="text-[10px] text-amber-200/90 leading-relaxed font-medium">
+                <span className="font-bold text-amber-300 block mb-0.5">Iframe Preview Mode Active</span>
+                Google Sign-In popups are often blocked when running inside an iframe. If you encounter any sign-in errors, click the <strong className="text-accent-teal font-extrabold">"Open in New Tab"</strong> icon in the top right of this preview panel to log in smoothly.
+              </div>
+            </div>
+          )}
+
+          {signInError && (
+            <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-2xl space-y-2 animate-fadeIn">
+              <div className="flex items-start space-x-2.5">
+                <AlertTriangle className="text-red-400 mt-0.5 flex-shrink-0 animate-pulse" size={16} />
+                <div className="text-xs text-red-200/90 leading-relaxed">
+                  <span className="font-bold text-red-400 block mb-1">Sign-In Popup Blocked/Closed</span>
+                  <p className="font-mono text-[9px] bg-dark-bg/60 p-2 rounded-lg border border-red-950/40 text-red-300 select-all mb-2">
+                    {signInError}
+                  </p>
+                  <p className="font-medium text-[11px] text-teal-200/80 leading-normal">
+                    This error usually occurs when the Google authentication popup is closed prematurely or blocked by your browser's cross-origin iframe restrictions.
+                  </p>
+                </div>
+              </div>
+              <div className="pl-6 pt-1 space-y-1.5 text-[11px] text-teal-200/90 border-t border-teal-900/30 mt-2">
+                <p className="font-bold text-white">How to fix this in 3 easy steps:</p>
+                <ul className="list-decimal list-inside space-y-1.5 text-teal-300/90">
+                  <li>
+                    Look at the top-right corner of the preview area and click the <strong className="text-accent-teal font-extrabold inline-flex items-center gap-0.5">"Open in New Tab" <ExternalLink size={10} /></strong> icon.
+                  </li>
+                  <li>
+                    In the newly opened browser tab, navigate to the <strong className="text-white">Sync</strong> tab and click <strong className="text-white">Sign in with Google</strong>.
+                  </li>
+                  <li>
+                    Authorize your Google account, and your sessions will sync automatically across the app!
+                  </li>
+                </ul>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
