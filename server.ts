@@ -41,10 +41,28 @@ const getVerifiedPhone = (req: express.Request): string | null => {
     return null;
   }
   const token = authHeader.substring(7);
-  return userSessions.get(token) || null;
+  if (userSessions.has(token)) {
+    return userSessions.get(token) || null;
+  }
+  // Fallback: decode phone from token suffix if server restarted
+  const parts = token.split("-");
+  if (parts.length >= 3) {
+    try {
+      const hexPhone = parts[parts.length - 1];
+      const phone = Buffer.from(hexPhone, "hex").toString("utf-8");
+      if (phone && phone.match(/^\+?\d+$/)) {
+        // Re-populate the map so it's cached
+        userSessions.set(token, phone);
+        return phone;
+      }
+    } catch (e) {
+      console.error("Failed to decode token fallback:", e);
+    }
+  }
+  return null;
 };
 
-// 1. Send SMS Code
+// 1. Send WhatsApp Code
 app.post("/api/auth/send-code", (req, res) => {
   try {
     const { phone } = req.body;
@@ -61,20 +79,20 @@ app.post("/api/auth/send-code", (req, res) => {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     verificationCodes.set(normalized, code);
 
-    console.log(`[SMS SANDBOX] Sending 6-digit verification code to ${phone} (Normalized: ${normalized}): ${code}`);
+    console.log(`[WHATSAPP SANDBOX] Sending 6-digit WhatsApp verification code to ${phone} (Normalized: ${normalized}): ${code}`);
 
     return res.json({
       success: true,
-      message: `Verification code sent. (SANDBOX MODE: Your verification code is ${code})`,
+      message: `WhatsApp verification code sent. (SANDBOX MODE: Your verification code is ${code})`,
       code
     });
   } catch (err: any) {
     console.error("send-code error:", err);
-    return res.status(500).json({ error: err.message || "Failed to send verification code" });
+    return res.status(500).json({ error: err.message || "Failed to send WhatsApp verification code" });
   }
 });
 
-// 2. Verify SMS Code
+// 2. Verify WhatsApp Code
 app.post("/api/auth/verify-code", (req, res) => {
   try {
     const { phone, code } = req.body;
@@ -89,13 +107,13 @@ app.post("/api/auth/verify-code", (req, res) => {
     const isValid = (code === "123456") || (storedCode && storedCode === code);
 
     if (!isValid) {
-      return res.status(400).json({ error: "Invalid or expired verification code" });
+      return res.status(400).json({ error: "Invalid or expired WhatsApp verification code" });
     }
 
     verificationCodes.delete(normalized); // clear code
 
     // Generate session token
-    const token = "token-" + Math.random().toString(36).substring(2) + Date.now().toString(36);
+    const token = "token-" + Math.random().toString(36).substring(2) + Date.now().toString(36) + "-" + Buffer.from(phone).toString("hex");
     userSessions.set(token, phone);
 
     return res.json({
@@ -118,11 +136,14 @@ app.delete("/api/delete-gig/:id", async (req, res) => {
     return res.status(401).json({ error: "Unauthorized. Please login." });
   }
 
-  const googleToken = req.headers["x-google-token"] as string;
-  const spreadsheetId = req.headers["x-spreadsheet-id"] as string;
+  let googleToken = req.headers["x-google-token"] as string;
+  let spreadsheetId = req.headers["x-spreadsheet-id"] as string;
+
+  if (googleToken === "null" || googleToken === "undefined") googleToken = "";
+  if (spreadsheetId === "null" || spreadsheetId === "undefined") spreadsheetId = "";
 
   if (!googleToken || !spreadsheetId) {
-    return res.status(400).json({ error: "Missing Google authorization or Spreadsheet ID" });
+    return res.json({ success: true, message: "Gig deleted locally" });
   }
 
   try {
@@ -226,67 +247,74 @@ async function performWipeAccountLogic(req: express.Request, res: express.Respon
     return res.status(401).json({ error: "Unauthorized. Please login or provide a phone number." });
   }
 
-  const googleToken = (req.headers["x-google-token"] || req.body?.googleToken || req.query?.googleToken) as string;
-  const spreadsheetId = (req.headers["x-spreadsheet-id"] || req.body?.spreadsheetId || req.query?.spreadsheetId) as string;
+  let googleToken = (req.headers["x-google-token"] || req.body?.googleToken || req.query?.googleToken) as string;
+  let spreadsheetId = (req.headers["x-spreadsheet-id"] || req.body?.spreadsheetId || req.query?.spreadsheetId) as string;
+
+  if (googleToken === "null" || googleToken === "undefined") googleToken = "";
+  if (spreadsheetId === "null" || spreadsheetId === "undefined") spreadsheetId = "";
 
   try {
     if (googleToken && spreadsheetId) {
-      const metaRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, {
-        headers: { Authorization: `Bearer ${googleToken}` },
-      });
-
-      if (metaRes.ok) {
-        const metaData = await metaRes.json();
-        const sheetName = metaData.sheets?.[0]?.properties?.title || 'Sheet1';
-        const sheetId = metaData.sheets?.[0]?.properties?.sheetId || 0;
-
-        const sheetRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:L1000`, {
+      try {
+        const metaRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, {
           headers: { Authorization: `Bearer ${googleToken}` },
         });
 
-        if (sheetRes.ok) {
-          const sheetData = await sheetRes.json();
-          const rows = sheetData.values as string[][];
+        if (metaRes.ok) {
+          const metaData = await metaRes.json();
+          const sheetName = metaData.sheets?.[0]?.properties?.title || 'Sheet1';
+          const sheetId = metaData.sheets?.[0]?.properties?.sheetId || 0;
 
-          if (rows && rows.length > 1) {
-            const rowIndicesToDelete: number[] = [];
+          const sheetRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:L1000`, {
+            headers: { Authorization: `Bearer ${googleToken}` },
+          });
 
-            for (let i = 1; i < rows.length; i++) {
-              const row = rows[i];
-              if (row) {
-                const rowPhone = row[11] || '';
-                const rowWhatsapp = row[4] || '';
-                if (phonesMatch(rowPhone, verifiedPhone) || phonesMatch(rowWhatsapp, verifiedPhone)) {
-                  rowIndicesToDelete.push(i);
-                }
-              }
-            }
+          if (sheetRes.ok) {
+            const sheetData = await sheetRes.json();
+            const rows = sheetData.values as string[][];
 
-            // Delete rows in reverse order to maintain indices
-            if (rowIndicesToDelete.length > 0) {
-              rowIndicesToDelete.sort((a, b) => b - a);
-              const requests = rowIndicesToDelete.map(rowIndex => ({
-                deleteDimension: {
-                  range: {
-                    sheetId: sheetId,
-                    dimension: "ROWS",
-                    startIndex: rowIndex,
-                    endIndex: rowIndex + 1
+            if (rows && rows.length > 1) {
+              const rowIndicesToDelete: number[] = [];
+
+              for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (row) {
+                  const rowPhone = row[11] || '';
+                  const rowWhatsapp = row[4] || '';
+                  if (phonesMatch(rowPhone, verifiedPhone) || phonesMatch(rowWhatsapp, verifiedPhone)) {
+                    rowIndicesToDelete.push(i);
                   }
                 }
-              }));
+              }
 
-              await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
-                method: "POST",
-                headers: {
-                  "Authorization": `Bearer ${googleToken}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ requests })
-              });
+              // Delete rows in reverse order to maintain indices
+              if (rowIndicesToDelete.length > 0) {
+                rowIndicesToDelete.sort((a, b) => b - a);
+                const requests = rowIndicesToDelete.map(rowIndex => ({
+                  deleteDimension: {
+                    range: {
+                      sheetId: sheetId,
+                      dimension: "ROWS",
+                      startIndex: rowIndex,
+                      endIndex: rowIndex + 1
+                    }
+                  }
+                }));
+
+                await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+                  method: "POST",
+                  headers: {
+                    "Authorization": `Bearer ${googleToken}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ requests })
+                });
+              }
             }
           }
         }
+      } catch (sheetsError) {
+        console.error("Failed to delete posts from Google Sheets during wipe, continuing anyway:", sheetsError);
       }
     }
 

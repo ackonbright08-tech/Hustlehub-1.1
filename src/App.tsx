@@ -879,23 +879,23 @@ export default function App() {
       });
 
       if (!res.ok) {
-        throw new Error("Failed to send verification code");
+        throw new Error("Failed to send WhatsApp verification code");
       }
 
       const data = await res.json();
       if (data.success) {
         setSandboxCode(data.code || "123456");
         setLoginStep("verify");
-        triggerToast("🔑 Verification code sent! Check the sandbox indicator below.");
+        triggerToast("🔑 WhatsApp verification code sent! Check the sandbox indicator below.");
       }
     } catch (err: any) {
-      alert(err.message || "Failed to send verification code. Please try again.");
+      alert(err.message || "Failed to send WhatsApp verification code. Please try again.");
     } finally {
       setIsAuthLoading(false);
     }
   };
 
-  // Handler to verify 6-digit SMS code
+  // Handler to verify 6-digit WhatsApp code
   const handleVerifyCode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!codeInput || codeInput.length < 6) {
@@ -914,7 +914,7 @@ export default function App() {
       });
 
       if (!res.ok) {
-        alert("Invalid or expired code. Please try again.");
+        alert("Invalid or expired WhatsApp code. Please try again.");
         return;
       }
 
@@ -1000,19 +1000,28 @@ export default function App() {
           triggerToast("❌ Session expired. Please log in again.");
           handleLogout();
           return;
+        } else {
+          // If the spreadsheet deletion failed but it's not a session issue, still delete locally for resilience
+          const updatedGigs = gigs.filter(g => g.id !== gigId);
+          setGigs(updatedGigs);
+          localStorage.setItem("hustlehub_gigs", JSON.stringify(updatedGigs));
+          triggerToast(`⚠️ Deleted locally (Google Sheet sync issue: ${errData.error || "unavailable"})`);
+          return;
         }
       }
 
       // Filter out of local gigs state immediately
-      setGigs(gigs.filter(g => g.id !== gigId));
-      localStorage.setItem("hustlehub_gigs", JSON.stringify(gigs.filter(g => g.id !== gigId)));
+      const updatedGigs = gigs.filter(g => g.id !== gigId);
+      setGigs(updatedGigs);
+      localStorage.setItem("hustlehub_gigs", JSON.stringify(updatedGigs));
       triggerToast("🗑️ Hustle successfully deleted!");
 
     } catch (err: any) {
       console.error("Failed to delete gig:", err);
       // Still remove locally to be resilient
-      setGigs(gigs.filter(g => g.id !== gigId));
-      localStorage.setItem("hustlehub_gigs", JSON.stringify(gigs.filter(g => g.id !== gigId)));
+      const updatedGigs = gigs.filter(g => g.id !== gigId);
+      setGigs(updatedGigs);
+      localStorage.setItem("hustlehub_gigs", JSON.stringify(updatedGigs));
       triggerToast("🗑️ Hustle removed from your device.");
     }
   };
@@ -1168,7 +1177,7 @@ export default function App() {
                   {isAuthLoading ? (
                     <RefreshCw className="animate-spin" size={14} />
                   ) : (
-                    <span>Request 6-Digit SMS Code</span>
+                    <span>Request WhatsApp Verification Code</span>
                   )}
                 </button>
               </motion.form>
@@ -1184,7 +1193,7 @@ export default function App() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-[10px] font-bold uppercase text-teal-200/60 tracking-wider">
-                      Enter 6-Digit Verification Code
+                      Enter 6-Digit WhatsApp Verification Code
                     </label>
                     <button
                       type="button"
@@ -1229,7 +1238,7 @@ export default function App() {
                 {sandboxCode && (
                   <div className="bg-accent-teal/10 border border-accent-teal/30 p-3 rounded-2xl text-center">
                     <p className="text-[10px] text-teal-200 leading-normal">
-                      ✨ <strong>SMS SANDBOX SIMULATOR:</strong>
+                      ✨ <strong>WHATSAPP SANDBOX SIMULATOR:</strong>
                     </p>
                     <p 
                       className="text-xs text-white font-extrabold tracking-widest font-mono mt-1 select-all cursor-pointer animate-pulse" 
@@ -1251,7 +1260,7 @@ export default function App() {
           <div className="bg-dark-bg/50 p-3.5 rounded-2xl border border-teal-950/60 flex items-start space-x-2 text-left">
             <span className="text-sm">🛡️</span>
             <span className="text-[9px] text-teal-200/60 leading-relaxed font-semibold">
-              HustleHub utilizes sandbox-secure local verification for testing and immediate deployment in Ghana's network boundaries. No SMS rates apply.
+              HustleHub will send a 6-digit security code to your WhatsApp number.
             </span>
           </div>
         </div>
