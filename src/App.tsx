@@ -375,7 +375,9 @@ export default function App() {
   };
 
   const handleClearProfile = () => {
-    performFullAccountWipe("PERMANENT PROFILE & ACCOUNT CLEAR");
+    setProfile(null);
+    localStorage.removeItem("hustlehub_profile");
+    triggerToast("👤 Saved profile details cleared successfully!");
   };
 
   const openPostModal = () => {

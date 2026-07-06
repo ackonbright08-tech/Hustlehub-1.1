@@ -353,6 +353,78 @@ const ai = new GoogleGenAI({
   }
 });
 
+// Local fallback regex and keyword text matcher for resilient AI auto-fill
+const fallbackParseText = (rawText: string) => {
+  let payout = "Negotiable";
+  // Search for something like GH₵150 or GHS 150 or 150 GHS etc
+  const payoutRegex = /(?:GH₵|GHS|GHc|GHC|₵)\s*(\d+(?:,\d+)*(?:\.\d+)?)/i;
+  const payoutMatch = rawText.match(payoutRegex);
+  if (payoutMatch) {
+    payout = `GH₵${payoutMatch[1]}`;
+  } else {
+    // maybe just a number like "budget: 150" or "paying 100" or "150 cedis"
+    const generalNumMatch = rawText.match(/(?:budget|pay|paying|payout|price|cost|amount|GH₵|₵)\s*(?:is|of|about)?\s*(\d+)/i) || rawText.match(/(\d+)\s*(?:cedis|cedi|ghs|ghc)/i);
+    if (generalNumMatch) {
+      payout = `GH₵${generalNumMatch[1]}`;
+    }
+  }
+
+  let location = "Accra, Ghana"; // default
+  // Check common Ghana locations
+  const ghanaLocations = [
+    "Osu", "East Legon", "Airport Residential", "Cantonments", "Labadi", "Spintex", 
+    "Tema", "Kumasi", "Takoradi", "Cape Coast", "Koforidua", "Tamale", "Madina", 
+    "Dansoman", "Adabraka", "Dzorwulu", "Roman Ridge", "Achimota", "Teshie", "Nungua",
+    "Kasoa", "Aburi", "Abelemkpe", "Tesano", "Legon"
+  ];
+  for (const loc of ghanaLocations) {
+    if (new RegExp("\\b" + loc + "\\b", "i").test(rawText)) {
+      location = `${loc}, Ghana`;
+      break;
+    }
+  }
+  // Or look for "at [place]" or "in [place]" or "location: [place]"
+  const locRegex = /(?:location|loc|at|in|around|near):\s*([A-Za-z0-9\s,]+)/i;
+  const locMatch = rawText.match(locRegex);
+  if (locMatch && locMatch[1].trim().length > 2) {
+    location = locMatch[1].trim();
+  }
+
+  let category = "Other";
+  const catKeywords: { [key: string]: string[] } = {
+    "Delivery & Transit": ["delivery", "rider", "courier", "dispatch", "drive", "driver", "transit", "uber", "bolt", "car", "motor", "bike", "transport"],
+    "Tech & Social Media": ["tech", "social media", "instagram", "facebook", "website", "app", "code", "coding", "software", "graphics", "design", "video", "photo", "photography", "post", "posting"],
+    "Teaching & Writing": ["teach", "teaching", "tutor", "math", "english", "write", "writing", "editor", "blog", "homework", "lesson"],
+    "Handwork & Repair": ["repair", "handyman", "plumber", "electrician", "carpenter", "fix", "ac", "mechanic", "painting", "mason"],
+    "Fashion & Hair": ["hair", "barber", "salon", "makeup", "braid", "dress", "fashion", "tailor", "sewing", "nails", "clothe"],
+    "Agric & Business": ["agric", "farming", "farm", "sales", "marketing", "business", "consult", "finance", "shop", "store", "retail"]
+  };
+  for (const [cat, keywords] of Object.entries(catKeywords)) {
+    for (const kw of keywords) {
+      if (new RegExp("\\b" + kw + "s?\\b", "i").test(rawText)) {
+        category = cat;
+        break;
+      }
+    }
+    if (category !== "Other") break;
+  }
+
+  let title = rawText.split(/[.!?\n]/)[0].trim();
+  if (title.length > 50) {
+    title = title.substring(0, 47) + "...";
+  } else if (title.length < 5) {
+    title = rawText.trim().substring(0, 50);
+  }
+
+  return {
+    title,
+    category,
+    payout,
+    location,
+    description: rawText.trim()
+  };
+};
+
 // API endpoint to parse raw gig text using Gemini
 app.post("/api/parse-gig", async (req, res) => {
   const { rawText } = req.body;
@@ -361,12 +433,19 @@ app.post("/api/parse-gig", async (req, res) => {
     return res.status(400).json({ error: "Missing or invalid rawText field" });
   }
 
+  let parsedJson: any = null;
+
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: `Raw User Input: "${rawText}"`,
-      config: {
-        systemInstruction: `You are the automated backend data engine for HustleHub Ghana. Your primary role is to take raw, user-submitted text from the "+ Post" form and convert it into a perfectly structured JSON object ready to be appended as a new row in the connected Google Sheets database.
+    if (!process.env.GEMINI_API_KEY) {
+      console.warn("[Gemini API] GEMINI_API_KEY is not defined. Using local fallback parsing.");
+      parsedJson = fallbackParseText(rawText);
+    } else {
+      try {
+        const response = await ai.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: `Raw User Input: "${rawText}"`,
+          config: {
+            systemInstruction: `You are the automated backend data engine for HustleHub Ghana. Your primary role is to take raw, user-submitted text from the "+ Post" form and convert it into a perfectly structured JSON object ready to be appended as a new row in the connected Google Sheets database.
 
 Analyze the user's input and extract these exact fields:
 1. "title": A concise, clear name for the gig.
@@ -379,42 +458,47 @@ Output Rules:
 - Return ONLY a raw JSON object containing these keys.
 - Do not include any markdown formatting (like \`\`\`json), background text, or conversational chat.
 - If details are messy, use your knowledge of Ghanaian context to clean them up professionally before generating the JSON.`,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            title: {
-              type: Type.STRING,
-              description: "A concise, clear name for the gig.",
-            },
-            category: {
-              type: Type.STRING,
-              description: "Must be exactly one of: Delivery & Transit, Tech & Social Media, Teaching & Writing, Handwork & Repair, Fashion & Hair, Agric & Business, or Other.",
-            },
-            payout: {
-              type: Type.STRING,
-              description: "The budget formatted strictly as GH₵ followed by the amount (e.g., GH₵150). If not specified, set it as 'Negotiable'.",
-            },
-            location: {
-              type: Type.STRING,
-              description: "The specific neighborhood or city in Ghana (e.g., 'Osu, Accra' or 'Tema Community 25').",
-            },
-            description: {
-              type: Type.STRING,
-              description: "A clean, readable summary of what needs to be done.",
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                title: {
+                  type: Type.STRING,
+                  description: "A concise, clear name for the gig.",
+                },
+                category: {
+                  type: Type.STRING,
+                  description: "Must be exactly one of: Delivery & Transit, Tech & Social Media, Teaching & Writing, Handwork & Repair, Fashion & Hair, Agric & Business, or Other.",
+                },
+                payout: {
+                  type: Type.STRING,
+                  description: "The budget formatted strictly as GH₵ followed by the amount (e.g., GH₵150). If not specified, set it as 'Negotiable'.",
+                },
+                location: {
+                  type: Type.STRING,
+                  description: "The specific neighborhood or city in Ghana (e.g., 'Osu, Accra' or 'Tema Community 25').",
+                },
+                description: {
+                  type: Type.STRING,
+                  description: "A clean, readable summary of what needs to be done.",
+                },
+              },
+              required: ["title", "category", "payout", "location", "description"],
             },
           },
-          required: ["title", "category", "payout", "location", "description"],
-        },
-      },
-    });
+        });
 
-    const resultText = response.text;
-    if (!resultText) {
-      throw new Error("No response text from Gemini API");
+        const resultText = response.text;
+        if (!resultText) {
+          throw new Error("No response text from Gemini API");
+        }
+
+        parsedJson = JSON.parse(resultText.trim());
+      } catch (geminiError: any) {
+        console.warn("[Gemini API] Failed to parse with Gemini, trying local fallback:", geminiError);
+        parsedJson = fallbackParseText(rawText);
+      }
     }
-
-    const parsedJson = JSON.parse(resultText.trim());
 
     // Write to Google Sheet if synchronization details are provided
     const { googleAccessToken, spreadsheetId, userPhone, posterName, whatsapp } = req.body;

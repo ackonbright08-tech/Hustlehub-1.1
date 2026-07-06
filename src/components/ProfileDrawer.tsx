@@ -385,7 +385,7 @@ export default function ProfileDrawer({
                     <button
                       type="button"
                       onClick={() => {
-                        if (window.confirm("Are you sure you want to log out of HustleHub? Your SMS session will be cleared.")) {
+                        if (window.confirm("Are you sure you want to log out of HustleHub? Your WhatsApp session will be cleared.")) {
                           onLogout();
                         }
                       }}
