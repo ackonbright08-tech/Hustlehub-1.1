@@ -198,21 +198,21 @@ export default function App() {
     switch (bgType) {
       case "sunset":
         return {
-          background: theme === "light"
+          backgroundImage: theme === "light"
             ? "linear-gradient(135deg, #fef08a 0%, #f97316 50%, #ccfbf1 100%)"
             : "linear-gradient(135deg, #022c22 0%, #115e59 40%, #7c2d12 100%)",
           backgroundAttachment: "fixed"
         } as React.CSSProperties;
       case "cyber":
         return {
-          background: theme === "light"
+          backgroundImage: theme === "light"
             ? "radial-gradient(at 0% 0%, #ccfbf1 0px, transparent 50%), radial-gradient(at 100% 100%, #fef08a 0px, transparent 50%)"
             : "radial-gradient(at 0% 0%, #004d40 0px, transparent 50%), radial-gradient(at 50% 0%, #001e18 0px, transparent 70%), radial-gradient(at 100% 0%, #78350f 0px, transparent 50%)",
           backgroundAttachment: "fixed"
         } as React.CSSProperties;
       case "ocean":
         return {
-          background: theme === "light"
+          backgroundImage: theme === "light"
             ? "linear-gradient(135deg, #e0f2f1 0%, #cbd5e1 50%, #bae6fd 100%)"
             : "linear-gradient(135deg, #011612 0%, #004d40 60%, #0c4a6e 100%)",
           backgroundAttachment: "fixed"
@@ -305,6 +305,69 @@ export default function App() {
     } catch (e) {}
   }, []);
 
+  // Complete Account Wiping / Deletion Handler shared between buttons
+  const performFullAccountWipe = async (warningTitle: string) => {
+    const confirmed = window.confirm(
+      `⚠️ WARNING: ${warningTitle}\n\nAre you sure you want to permanently wipe your account? This will delete all of your posted hustles from Google Sheets, clear your verification status, and completely scrub ALL application data and cache from this browser.`
+    );
+    if (!confirmed) return;
+
+    const secondConfirm = window.confirm(
+      "🔥 FINAL CONFIRMATION\n\nThis action cannot be undone. All your booked/saved items, profile data, and history will be permanently lost. Wipe everything now?"
+    );
+    if (!secondConfirm) return;
+
+    try {
+      triggerToast("⏳ Purging account and posts from server...");
+      
+      const response = await fetch(`/api/wipe-account?phone=${encodeURIComponent(smsPhone || "")}`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${smsToken}`,
+          "x-google-token": googleToken || "",
+          "x-spreadsheet-id": activeSheetId || ""
+        }
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error("Failed to wipe account from backend. Status:", response.status, "Error:", errText);
+      }
+    } catch (error) {
+      console.error("Network error when calling DELETE /api/wipe-account:", error);
+    }
+
+    // Completely scrub local browser cache and localStorage
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      // If there are service workers or caches, clear them
+      if (window.caches) {
+        const keys = await caches.keys();
+        for (const key of keys) {
+          await caches.delete(key);
+        }
+      }
+    } catch (e) {
+      console.error("Local storage clear failed", e);
+    }
+
+    // Reset state and redirect to phone login screen
+    setSmsToken(null);
+    setSmsPhone(null);
+    setGigs([]);
+    setSavedGigIds([]);
+    setProfile(null);
+    setLoginStep("phone");
+    setPhoneInput("");
+    setCodeInput("");
+    setSandboxCode(null);
+    setIsProfileDrawerOpen(false);
+
+    triggerToast("🔥 Account & profile wiped successfully. Local cache scrubbed.");
+  };
+
   const handleSaveProfile = (updated: UserProfile) => {
     setProfile(updated);
     localStorage.setItem("hustlehub_profile", JSON.stringify(updated));
@@ -312,9 +375,7 @@ export default function App() {
   };
 
   const handleClearProfile = () => {
-    setProfile(null);
-    localStorage.removeItem("hustlehub_profile");
-    triggerToast("🗑️ Profile cleared successfully.");
+    performFullAccountWipe("PERMANENT PROFILE & ACCOUNT CLEAR");
   };
 
   const openPostModal = () => {
@@ -912,66 +973,8 @@ export default function App() {
   };
 
   // Account Wiping / Deletion Handler
-  const handleDeleteAccount = async () => {
-    const confirmed = window.confirm(
-      "⚠️ WARNING: PERMANENT ACCOUNT DELETION\n\nAre you sure you want to permanently wipe your account? This will delete all of your posted hustles from Google Sheets, clear your verification status, and completely scrub ALL application data and cache from this browser."
-    );
-    if (!confirmed) return;
-
-    const secondConfirm = window.confirm(
-      "🔥 FINAL CONFIRMATION\n\nThis action cannot be undone. All your booked/saved items and history will be lost. Wipe everything now?"
-    );
-    if (!secondConfirm) return;
-
-    try {
-      triggerToast("⏳ Purging account and posts from server...");
-      
-      await fetch("/api/auth/wipe-account", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${smsToken}`,
-          "x-google-token": googleToken || "",
-          "x-spreadsheet-id": activeSheetId || ""
-        }
-      });
-
-      // Completely scrub local browser cache and localStorage
-      try {
-        localStorage.clear();
-        sessionStorage.clear();
-        
-        // If there are service workers or caches, clear them
-        if (window.caches) {
-          const keys = await caches.keys();
-          for (const key of keys) {
-            await caches.delete(key);
-          }
-        }
-      } catch (e) {
-        console.error("Local storage clear failed", e);
-      }
-
-      // Reset state and redirect
-      setSmsToken(null);
-      setSmsPhone(null);
-      setGigs([]);
-      setSavedGigIds([]);
-      setProfile(null);
-      setLoginStep("phone");
-      setPhoneInput("");
-      setCodeInput("");
-      setSandboxCode(null);
-      setIsProfileDrawerOpen(false);
-
-      triggerToast("🔥 Account wiped successfully. Local cache scrubbed.");
-
-    } catch (error) {
-      console.error("Failed to wipe account:", error);
-      triggerToast("❌ Purge failed. Local storage was cleared.");
-      // Fallback local clear
-      localStorage.clear();
-      setSmsToken(null);
-    }
+  const handleDeleteAccount = () => {
+    performFullAccountWipe("PERMANENT ACCOUNT DELETION");
   };
 
   // Individual post delete action
@@ -1000,16 +1003,16 @@ export default function App() {
         }
       }
 
-      // Filter out of local gigs state
-      const updated = gigs.filter(g => g.id !== gigId);
-      saveGigs(updated);
+      // Filter out of local gigs state immediately
+      setGigs(gigs.filter(g => g.id !== gigId));
+      localStorage.setItem("hustlehub_gigs", JSON.stringify(gigs.filter(g => g.id !== gigId)));
       triggerToast("🗑️ Hustle successfully deleted!");
 
     } catch (err: any) {
       console.error("Failed to delete gig:", err);
       // Still remove locally to be resilient
-      const updated = gigs.filter(g => g.id !== gigId);
-      saveGigs(updated);
+      setGigs(gigs.filter(g => g.id !== gigId));
+      localStorage.setItem("hustlehub_gigs", JSON.stringify(gigs.filter(g => g.id !== gigId)));
       triggerToast("🗑️ Hustle removed from your device.");
     }
   };

@@ -110,7 +110,7 @@ export default function ProfileDrawer({
                   <User size={18} />
                 </div>
                 <div>
-                  <h2 className="text-base font-extrabold text-white">Your Freelancer Profile</h2>
+                  <h2 className="text-base font-extrabold text-white">Your Hustle Profile</h2>
                   <p className="text-[10px] text-teal-300">Set up pre-fill details for posting & applying</p>
                 </div>
               </div>
