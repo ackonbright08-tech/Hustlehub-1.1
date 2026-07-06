@@ -113,6 +113,19 @@ export default function App() {
   const [phoneInput, setPhoneInput] = useState("");
   const [codeInput, setCodeInput] = useState("");
   const [isAuthLoading, setIsAuthLoading] = useState(false);
+
+  // Helper to format whatsapp link
+  const getWhatsAppLink = (whatsapp?: string, userPhone?: string) => {
+    const num = (whatsapp || userPhone || "").replace(/\D/g, "");
+    if (!num) return "https://wa.me/";
+    let clean = num;
+    if (clean.startsWith("0") && !clean.startsWith("233")) {
+      clean = "233" + clean.slice(1);
+    } else if (!clean.startsWith("233") && clean.length === 9) {
+      clean = "233" + clean;
+    }
+    return `https://wa.me/${clean}`;
+  };
   const [sandboxCode, setSandboxCode] = useState<string | null>(null);
 
   // Google Sheets states propagated from GoogleSheetsSync
@@ -1801,6 +1814,12 @@ export default function App() {
                   const categoryInfo = CATEGORIES.find(c => c.id === gig.category);
                   const isSaved = savedGigIds.includes(gig.id);
 
+                  const cleanSmsPhone = (smsPhone || "").replace(/\D/g, "");
+                  const isOwner = !!(smsPhone && (
+                    (gig.userPhone || "").replace(/\D/g, "") === cleanSmsPhone || 
+                    gig.whatsapp.replace(/\D/g, "") === cleanSmsPhone
+                  ));
+
                   return (
                     <motion.div
                       layout
@@ -1946,7 +1965,7 @@ export default function App() {
                           </button>
 
                           {/* Instant apply or delete button */}
-                          {activeTab === "mygigs" ? (
+                          {isOwner ? (
                             <button
                               onClick={() => handleDeleteGig(gig.id)}
                               className="bg-red-600 hover:bg-red-700 active:scale-95 text-white px-4 py-2 rounded-xl text-xs font-extrabold flex items-center space-x-1.5 transition-all shadow-md cursor-pointer"
@@ -1955,13 +1974,15 @@ export default function App() {
                               <span>Delete</span>
                             </button>
                           ) : (
-                            <button
-                              onClick={() => openApplyModal(gig)}
-                              className="bg-accent-teal hover:bg-teal-600 active:scale-95 text-white px-4 py-2 rounded-xl text-xs font-extrabold flex items-center space-x-1.5 transition-all shadow-md cursor-pointer"
+                            <a
+                              href={getWhatsAppLink(gig.whatsapp, gig.userPhone)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="bg-[#25D366] hover:bg-[#20BA5A] active:scale-95 text-white px-4 py-2 rounded-xl text-xs font-extrabold flex items-center space-x-1.5 transition-all shadow-md cursor-pointer"
                             >
-                              <span>Apply</span>
-                              <Send size={12} className="text-ghana-gold" />
-                            </button>
+                              <Phone size={12} />
+                              <span>Contact on WhatsApp</span>
+                            </a>
                           )}
                         </div>
 
