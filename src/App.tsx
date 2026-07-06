@@ -139,14 +139,32 @@ export default function App() {
   });
 
   const handleImportGigs = (imported: Gig[], merge: boolean) => {
+    let updated: Gig[];
     if (merge) {
       const existingIds = new Set(gigs.map(g => g.id));
       const newGigs = imported.filter(g => !existingIds.has(g.id));
-      const updated = [...newGigs, ...gigs];
-      saveGigs(updated);
+      updated = [...newGigs, ...gigs];
     } else {
-      saveGigs(imported);
+      updated = imported;
     }
+    saveGigs(updated);
+
+    // Send imported gigs to server so they are cached immediately
+    Promise.all(
+      imported.map(g => 
+        fetch("/api/gigs", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(googleToken ? { "x-google-token": googleToken } : {}),
+            ...(activeSheetId ? { "x-spreadsheet-id": activeSheetId } : {}),
+          },
+          body: JSON.stringify({ gig: g }),
+        }).catch(err => console.error("Error syncing imported gig:", err))
+      )
+    ).then(() => {
+      fetchGigsFromServer();
+    });
   };
   
   // Local profile states
@@ -584,38 +602,66 @@ export default function App() {
     return `${mins}m left`;
   };
 
+  // Fetch latest community gigs from server
+  const fetchGigsFromServer = async (showToast = false) => {
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (googleToken) {
+        headers["x-google-token"] = googleToken;
+      }
+      if (activeSheetId) {
+        headers["x-spreadsheet-id"] = activeSheetId;
+      }
+
+      const response = await fetch("/api/gigs", { headers });
+      if (!response.ok) {
+        throw new Error("Failed to load gigs from server.");
+      }
+
+      const fetchedList = await response.json();
+      if (Array.isArray(fetchedList)) {
+        const activeGigs = filterAndCleanExpiredGigs(fetchedList);
+        
+        // Merge with local state to avoid losing transient posts immediately
+        const serverIds = new Set(activeGigs.map(g => g.id));
+        const localOnly = gigs.filter(g => !serverIds.has(g.id) && g.id.startsWith("gig-"));
+        const merged = [...activeGigs, ...localOnly];
+
+        setGigs(merged);
+        localStorage.setItem("hustlehub_gigs", JSON.stringify(merged));
+
+        // Sync bookmarks
+        const savedFavorites = localStorage.getItem("hustlehub_saved");
+        if (savedFavorites) {
+          try {
+            const parsed = JSON.parse(savedFavorites) as string[];
+            const activeIds = new Set(merged.map(g => g.id));
+            const filteredFavs = parsed.filter(id => activeIds.has(id));
+            setSavedGigIds(filteredFavs);
+            localStorage.setItem("hustlehub_saved", JSON.stringify(filteredFavs));
+          } catch (e) {}
+        }
+
+        if (showToast) {
+          triggerToast(`🔄 Feed refreshed! Found ${activeGigs.length} live community gigs.`);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching gigs from server:", error);
+    }
+  };
+
   // Refresh feed trigger
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    setTimeout(() => {
-      const saved = localStorage.getItem("hustlehub_gigs");
-      let currentList = INITIAL_GIGS;
-      if (saved) {
-        try {
-          currentList = JSON.parse(saved);
-        } catch (e) {}
-      }
-      const activeGigs = filterAndCleanExpiredGigs(currentList);
-      setGigs(activeGigs);
-      localStorage.setItem("hustlehub_gigs", JSON.stringify(activeGigs));
-
-      // Filter bookmarks too
-      const savedFavorites = localStorage.getItem("hustlehub_saved");
-      if (savedFavorites) {
-        try {
-          const parsed = JSON.parse(savedFavorites) as string[];
-          const activeIds = new Set(activeGigs.map(g => g.id));
-          const filteredFavs = parsed.filter(id => activeIds.has(id));
-          setSavedGigIds(filteredFavs);
-          localStorage.setItem("hustlehub_saved", JSON.stringify(filteredFavs));
-        } catch (e) {}
-      }
-
-      setTipIndex(Math.floor(Math.random() * HUSTLE_TIPS.length));
-      setIsRefreshing(false);
-      setPullDistance(0);
-      triggerToast("🔄 Feed refreshed & expired hustles cleaned up!");
-    }, 1000);
+    await fetchGigsFromServer(false);
+    
+    setTipIndex(Math.floor(Math.random() * HUSTLE_TIPS.length));
+    setIsRefreshing(false);
+    setPullDistance(0);
+    triggerToast("🔄 Feed refreshed & expired hustles cleaned up!");
   };
 
   // Touch handlers for Pull down to Refresh
@@ -697,6 +743,15 @@ export default function App() {
       } catch (e) {}
     }
   }, []);
+
+  // Load gigs from server on mount and setup background refresh interval
+  useEffect(() => {
+    fetchGigsFromServer();
+    const interval = setInterval(() => {
+      fetchGigsFromServer();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [googleToken, activeSheetId]);
 
   // Save gigs to local storage on changes
   const saveGigs = (updatedGigs: Gig[]) => {
@@ -799,6 +854,22 @@ export default function App() {
 
     const updatedGigs = [newlyCreated, ...gigs];
     saveGigs(updatedGigs);
+
+    // Post to backend to make it globally visible
+    fetch("/api/gigs", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(googleToken ? { "x-google-token": googleToken } : {}),
+        ...(activeSheetId ? { "x-spreadsheet-id": activeSheetId } : {}),
+      },
+      body: JSON.stringify({ gig: newlyCreated }),
+    })
+      .then((res) => {
+        if (!res.ok) console.error("Failed to sync new post to server");
+        else fetchGigsFromServer();
+      })
+      .catch((err) => console.error("Error syncing post:", err));
 
     // Reset Form with profile pre-fill if present
     if (profile) {

@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
@@ -14,6 +15,33 @@ app.use(express.json());
 // In-memory store for SMS verification codes and user sessions
 const verificationCodes = new Map<string, string>();
 const userSessions = new Map<string, string>();
+
+const CACHE_FILE = path.join(process.cwd(), "gigs-cache.json");
+
+// Helper to load persistent cache
+const loadCache = (): any[] => {
+  try {
+    if (fs.existsSync(CACHE_FILE)) {
+      const data = fs.readFileSync(CACHE_FILE, "utf8");
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.error("Error loading gigs cache file:", e);
+  }
+  return [];
+};
+
+// Helper to save persistent cache
+const saveCache = (gigs: any[]) => {
+  try {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(gigs, null, 2), "utf8");
+  } catch (e) {
+    console.error("Error saving gigs cache file:", e);
+  }
+};
+
+// Global gigs cache as fail-safe backup for multi-user resilient viewing
+let gigsCache: any[] = loadCache();
 
 // Normalize Ghanaian phone numbers to a comparable 9-digit base
 const normalizePhone = (p: string): string => {
@@ -143,6 +171,8 @@ app.delete("/api/delete-gig/:id", async (req, res) => {
   if (spreadsheetId === "null" || spreadsheetId === "undefined") spreadsheetId = "";
 
   if (!googleToken || !spreadsheetId) {
+    gigsCache = gigsCache.filter(g => g.id !== id);
+    saveCache(gigsCache);
     return res.json({ success: true, message: "Gig deleted locally" });
   }
 
@@ -222,6 +252,9 @@ app.delete("/api/delete-gig/:id", async (req, res) => {
       const errText = await deleteRes.text();
       throw new Error(`Failed to delete row from spreadsheet: ${errText}`);
     }
+
+    gigsCache = gigsCache.filter(g => g.id !== id);
+    saveCache(gigsCache);
 
     return res.json({ success: true, message: "Gig deleted from Google Sheet successfully" });
 
@@ -343,10 +376,7 @@ async function performWipeAccountLogic(req: express.Request, res: express.Respon
 app.post("/api/auth/wipe-account", performWipeAccountLogic);
 app.delete("/api/wipe-account", performWipeAccountLogic);
 
-// Global gigs cache as fail-safe backup for multi-user resilient viewing
-let gigsCache: any[] = [];
-
-// GET /api/gigs fetches all gigs from Google Sheets globally (without any user phone filtering)
+// GET /api/gigs fetches all gigs globally (without any user phone filtering)
 app.get("/api/gigs", async (req, res) => {
   let googleToken = req.headers["x-google-token"] as string;
   let spreadsheetId = req.headers["x-spreadsheet-id"] as string;
@@ -384,6 +414,7 @@ app.get("/api/gigs", async (req, res) => {
 
     if (!rows || rows.length <= 1) {
       gigsCache = [];
+      saveCache(gigsCache);
       console.log("Total gigs sent to client:", gigsCache.length);
       return res.json([]);
     }
@@ -418,6 +449,7 @@ app.get("/api/gigs", async (req, res) => {
     }
 
     gigsCache = fetchedGigs;
+    saveCache(gigsCache);
     console.log("Total gigs sent to client:", gigsCache.length);
     return res.json(gigsCache);
 
@@ -425,6 +457,85 @@ app.get("/api/gigs", async (req, res) => {
     console.warn("Failed to fetch gigs from Google Sheet, returning cached copy:", error);
     console.log("Total gigs sent to client:", gigsCache.length);
     return res.json(gigsCache);
+  }
+});
+
+// POST /api/gigs posts a new gig globally and optionally appends to connected Google Sheets
+app.post("/api/gigs", async (req, res) => {
+  try {
+    const gig = req.body.gig;
+    if (!gig || !gig.title || !gig.whatsapp) {
+      return res.status(400).json({ error: "Invalid gig data" });
+    }
+
+    // Filter duplicate and prepend
+    gigsCache = gigsCache.filter((g) => g.id !== gig.id);
+    gigsCache.unshift(gig);
+    saveCache(gigsCache);
+
+    console.log("Gig added/updated on server cache. Total gigs:", gigsCache.length);
+
+    let googleToken = req.headers["x-google-token"] as string;
+    let spreadsheetId = req.headers["x-spreadsheet-id"] as string;
+
+    if (googleToken === "null" || googleToken === "undefined") googleToken = "";
+    if (spreadsheetId === "null" || spreadsheetId === "undefined") spreadsheetId = "";
+
+    if (googleToken && spreadsheetId) {
+      try {
+        const metaRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, {
+          headers: { Authorization: `Bearer ${googleToken}` },
+        });
+        if (metaRes.ok) {
+          const metaData = await metaRes.json();
+          const sheetName = metaData.sheets?.[0]?.properties?.title || 'Sheet1';
+          
+          const budgetNum = parseFloat(String(gig.budget || "").replace(/[^\d.]/g, "")) || 0;
+          const cleanWhatsApp = String(gig.whatsapp || "").replace(/\D/g, "");
+
+          const newRow = [
+            gig.id,
+            gig.title,
+            (gig.category || "other").toLowerCase(),
+            budgetNum,
+            `+${cleanWhatsApp}`,
+            gig.location,
+            gig.posterName || "Community Poster",
+            gig.duration || "One-time",
+            (gig.requirements || []).join(", "),
+            gig.createdAt || new Date().toISOString(),
+            gig.description || "",
+            gig.userPhone || ""
+          ];
+
+          const appendRes = await fetch(
+            `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:append?valueInputOption=USER_ENTERED`,
+            {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${googleToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                values: [newRow],
+              }),
+            }
+          );
+          if (appendRes.ok) {
+            console.log(`[Google Sheets] Standard gig appended to sheet: ${gig.id}`);
+          } else {
+            console.error(`[Google Sheets] Standard gig append failed: ${await appendRes.text()}`);
+          }
+        }
+      } catch (sheetErr) {
+        console.error("Failed to append standard gig to Google Sheet:", sheetErr);
+      }
+    }
+
+    return res.json({ success: true, gig });
+  } catch (error: any) {
+    console.error("Error posting gig:", error);
+    return res.status(500).json({ error: error.message || "Failed to post gig to server" });
   }
 });
 
